@@ -33,6 +33,7 @@ type AuthState = {
 type AuditRow = DepartmentLunch & { previousQuantity: number | null }
 
 const STORAGE_KEY = 'meal-auth'
+const APP_BASE = import.meta.env.BASE_URL
 const getTargetDate = (now: Date) => {
   const target = new Date(now)
   if (now.getHours() >= 12) {
@@ -298,7 +299,7 @@ function App() {
     const totalRooms = DEPARTMENTS.length
 
     return (
-        <BrowserRouter>
+        <BrowserRouter basename={APP_BASE}>
             <Routes>
                 <Route
                     path="/login"
