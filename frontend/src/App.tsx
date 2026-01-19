@@ -367,7 +367,6 @@ function App() {
                     element={
                         <RequireAuth auth={auth} role="kitchen">
                             <KitchenPage
-                                date={date}
                                 dateLabel={dateLabel}
                                 now={now}
                                 isLocked={isLocked}
@@ -1098,7 +1097,6 @@ function AdminPage({
 }
 
 function KitchenPage({
-    date,
     dateLabel,
     now,
     isLocked,
@@ -1109,7 +1107,6 @@ function KitchenPage({
     syncPulse,
     onLogout,
 }: {
-    date: string
     dateLabel: string
     now: Date
     isLocked: boolean
