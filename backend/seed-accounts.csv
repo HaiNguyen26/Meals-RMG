@@ -1,0 +1,15 @@
+role,external_id,email,department,password
+admin,ADMIN,admin@meal.local,Executive,RMG123@
+kitchen,KITCHEN,kitchen@meal.local,Kitchen,RMG123@
+manager,Warehouse,warehouse@meal.local,Warehouse,RMG123@
+manager,Production,production@meal.local,Production,RMG123@
+manager,Sales,sales@meal.local,Sales,RMG123@
+manager,Purchasing,purchasing@meal.local,Purchasing,RMG123@
+manager,Mechanical,mechanical@meal.local,Mechanical,RMG123@
+manager,Design,design@meal.local,Design,RMG123@
+manager,Automation,automation@meal.local,Automation,RMG123@
+manager,Technical Services,technical.services@meal.local,Technical Services,RMG123@
+manager,Service,service@meal.local,Service,RMG123@
+manager,CNC,cnc@meal.local,CNC,RMG123@
+manager,HR,hr@meal.local,HR,RMG123@
+

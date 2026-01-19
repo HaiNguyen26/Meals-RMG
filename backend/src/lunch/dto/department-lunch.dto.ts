@@ -1,0 +1,17 @@
+import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
+
+export class DepartmentLunchDto {
+  @IsDateString()
+  date: string;
+
+  @IsInt()
+  @Min(0)
+  totalQuantity: number;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+}
+
+
+
