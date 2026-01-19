@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { ClearDepartmentDto } from './dto/clear-department.dto';
 import { DepartmentLunchDto } from './dto/department-lunch.dto';
 import { SetLockDto } from './dto/set-lock.dto';
 import { LunchService } from './lunch.service';
@@ -47,11 +48,21 @@ export class LunchController {
             body.departmentId && actor.role === 'admin'
                 ? body.departmentId
                 : actor.department;
+        const regularQuantity =
+            typeof body.regularQuantity === 'number'
+                ? body.regularQuantity
+                : typeof body.totalQuantity === 'number'
+                  ? body.totalQuantity
+                  : 0;
+        const vegQuantity =
+            typeof body.vegQuantity === 'number' ? body.vegQuantity : 0;
 
         return this.lunchService.setDepartmentLunch({
             date: body.date,
             departmentId,
-            totalQuantity: body.totalQuantity,
+            regularQuantity,
+            vegQuantity,
+            totalQuantity: regularQuantity + vegQuantity,
             updatedBy: actor.userName,
         });
     }
@@ -82,6 +93,21 @@ export class LunchController {
     async getAuditHistory(@Query('limit') limit?: string) {
         const parsedLimit = limit ? Number(limit) : 200;
         return this.lunchService.listAuditHistory(parsedLimit);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('admin')
+    @Post('department/clear')
+    async clearDepartmentLunch(
+        @Body() body: ClearDepartmentDto,
+        @Req() request: Request,
+    ) {
+        const actor = this.resolveActor({ request });
+        return this.lunchService.clearDepartmentLunch(
+            body.date,
+            body.departmentId,
+            actor.userName,
+        );
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)

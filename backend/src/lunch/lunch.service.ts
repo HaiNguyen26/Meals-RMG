@@ -9,6 +9,8 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 type SetDepartmentInput = {
   date: string;
   departmentId: string;
+  regularQuantity: number;
+  vegQuantity: number;
   totalQuantity: number;
   updatedBy?: string | null;
 };
@@ -21,15 +23,17 @@ export class LunchService {
   ) {}
 
   async setDepartmentLunch(input: SetDepartmentInput) {
-    const { departmentId, totalQuantity, updatedBy } = input;
+    const { departmentId, regularQuantity, vegQuantity, totalQuantity, updatedBy } =
+      input;
     if (!departmentId) {
       throw new BadRequestException('Missing department');
     }
-    if (totalQuantity < 0) {
+    if (totalQuantity < 0 || regularQuantity < 0 || vegQuantity < 0) {
       throw new BadRequestException('Quantity must be >= 0');
     }
 
-    const dateValue = this.getTargetDate();
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(input.date);
     if (await this.isLocked(dateValue)) {
       throw new ForbiddenException('Registration is locked');
     }
@@ -48,22 +52,31 @@ export class LunchService {
       create: {
         departmentId,
         date: dateValue,
+        regularQuantity,
+        vegQuantity,
         totalQuantity,
         updatedBy: updatedBy ?? null,
       },
       update: {
+        regularQuantity,
+        vegQuantity,
         totalQuantity,
         updatedBy: updatedBy ?? null,
       },
     });
 
     const shouldLog =
-      !existing || existing.totalQuantity !== record.totalQuantity;
+      !existing ||
+      existing.totalQuantity !== record.totalQuantity ||
+      existing.regularQuantity !== record.regularQuantity ||
+      existing.vegQuantity !== record.vegQuantity;
     if (shouldLog) {
       await this.prisma.departmentLunchHistory.create({
         data: {
           departmentId,
           date: dateValue,
+          regularQuantity: record.regularQuantity,
+          vegQuantity: record.vegQuantity,
           totalQuantity: record.totalQuantity,
           updatedBy: updatedBy ?? null,
         },
@@ -79,7 +92,8 @@ export class LunchService {
   }
 
   async getDepartmentLunch(date: string, departmentId: string) {
-    const dateValue = new Date(date);
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
     const record = await this.prisma.departmentLunch.findUnique({
       where: { departmentId_date: { departmentId, date: dateValue } },
     });
@@ -87,6 +101,8 @@ export class LunchService {
       return {
         date,
         departmentId,
+        regularQuantity: 0,
+        vegQuantity: 0,
         totalQuantity: 0,
         updatedAt: null,
         updatedBy: null,
@@ -113,18 +129,27 @@ export class LunchService {
   }
 
   async summaryByDate(date: string) {
-    const dateValue = new Date(date);
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
     const rows = await this.prisma.departmentLunch.findMany({
       where: { date: dateValue },
       orderBy: { departmentId: 'asc' },
     });
-    const departments = rows.map((row) => ({
-      departmentId: row.departmentId,
-      totalQuantity: row.totalQuantity,
-      updatedAt: row.updatedAt.toISOString(),
-      updatedBy: row.updatedBy ?? null,
-    }));
-    const totalQuantity = rows.reduce((sum, row) => sum + row.totalQuantity, 0);
+    const departments = rows.map((row) => {
+      const quantities = this.normalizeQuantities(row);
+      return {
+        departmentId: row.departmentId,
+        regularQuantity: quantities.regularQuantity,
+        vegQuantity: quantities.vegQuantity,
+        totalQuantity: quantities.totalQuantity,
+        updatedAt: row.updatedAt.toISOString(),
+        updatedBy: row.updatedBy ?? null,
+      };
+    });
+    const totalQuantity = departments.reduce(
+      (sum, row) => sum + row.totalQuantity,
+      0,
+    );
     return {
       date,
       totalQuantity,
@@ -133,7 +158,8 @@ export class LunchService {
   }
 
   async setLock(date: string, locked: boolean, actor: string | null) {
-    const dateValue = new Date(date);
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
     const lock = await this.prisma.lunchLock.upsert({
       where: { date: dateValue },
       create: {
@@ -167,7 +193,8 @@ export class LunchService {
   }
 
   async getLock(date: string) {
-    const dateValue = new Date(date);
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
     const lock = await this.prisma.lunchLock.findUnique({
       where: { date: dateValue },
     });
@@ -189,10 +216,56 @@ export class LunchService {
   }
 
   async isLocked(date: Date): Promise<boolean> {
+    const dateValue = this.normalizeDate(date);
     const lock = await this.prisma.lunchLock.findUnique({
-      where: { date },
+      where: { date: dateValue },
     });
-    return (lock?.locked ?? false) || this.isTimeLocked(date);
+    return (lock?.locked ?? false) || this.isTimeLocked(dateValue);
+  }
+
+  async clearDepartmentLunch(
+    date: string,
+    departmentId: string,
+    updatedBy?: string | null,
+  ) {
+    if (!departmentId) {
+      throw new BadRequestException('Missing department');
+    }
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
+    const record = await this.prisma.departmentLunch.upsert({
+      where: { departmentId_date: { departmentId, date: dateValue } },
+      create: {
+        departmentId,
+        date: dateValue,
+        regularQuantity: 0,
+        vegQuantity: 0,
+        totalQuantity: 0,
+        updatedBy: updatedBy ?? null,
+      },
+      update: {
+        regularQuantity: 0,
+        vegQuantity: 0,
+        totalQuantity: 0,
+        updatedBy: updatedBy ?? null,
+      },
+    });
+    await this.prisma.departmentLunchHistory.create({
+      data: {
+        departmentId,
+        date: dateValue,
+        regularQuantity: 0,
+        vegQuantity: 0,
+        totalQuantity: 0,
+        updatedBy: updatedBy ?? null,
+      },
+    });
+    const response = this.mapDepartmentLunch(record);
+    this.realtimeGateway.emitLunchUpdated(response.date, {
+      type: 'department',
+      department: response,
+    });
+    return response;
   }
 
   private getTargetDate(now = new Date()) {
@@ -201,7 +274,7 @@ export class LunchService {
       target.setDate(target.getDate() + 1);
     }
     target.setHours(0, 0, 0, 0);
-    return target;
+    return this.normalizeDate(target);
   }
 
   private getLockCutoff(date: Date) {
@@ -225,19 +298,52 @@ export class LunchService {
     return hour >= 9 && hour < 12;
   }
 
+  private async purgePastDataIfNeeded(now = new Date()) {
+    if (now.getHours() < 12) {
+      return;
+    }
+    const today = this.normalizeDate(now);
+    await this.prisma.departmentLunchHistory.deleteMany({
+      where: { date: { lt: today } },
+    });
+    await this.prisma.departmentLunch.deleteMany({
+      where: { date: { lt: today } },
+    });
+    await this.prisma.lunchLock.deleteMany({
+      where: { date: { lt: today } },
+    });
+  }
+
+  private normalizeDate(input: Date | string) {
+    if (input instanceof Date) {
+      return new Date(Date.UTC(input.getFullYear(), input.getMonth(), input.getDate()));
+    }
+    const datePart = input.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    if (!year || !month || !day) {
+      throw new BadRequestException('Invalid date');
+    }
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
   private mapDepartmentLunch(record: {
     id: string;
     departmentId: string;
     date: Date;
+    regularQuantity: number;
+    vegQuantity: number;
     totalQuantity: number;
     updatedAt: Date;
     updatedBy: string | null;
   }) {
+    const quantities = this.normalizeQuantities(record);
     return {
       id: record.id,
       departmentId: record.departmentId,
       date: record.date.toISOString().slice(0, 10),
-      totalQuantity: record.totalQuantity,
+      regularQuantity: quantities.regularQuantity,
+      vegQuantity: quantities.vegQuantity,
+      totalQuantity: quantities.totalQuantity,
       updatedAt: record.updatedAt.toISOString(),
       updatedBy: record.updatedBy ?? null,
     };
@@ -247,17 +353,45 @@ export class LunchService {
     id: string;
     departmentId: string;
     date: Date;
+    regularQuantity: number;
+    vegQuantity: number;
     totalQuantity: number;
     createdAt: Date;
     updatedBy: string | null;
   }) {
+    const quantities = this.normalizeQuantities(record);
     return {
       id: record.id,
       departmentId: record.departmentId,
       date: record.date.toISOString().slice(0, 10),
-      totalQuantity: record.totalQuantity,
+      regularQuantity: quantities.regularQuantity,
+      vegQuantity: quantities.vegQuantity,
+      totalQuantity: quantities.totalQuantity,
       updatedAt: record.createdAt.toISOString(),
       updatedBy: record.updatedBy ?? null,
+    };
+  }
+
+  private normalizeQuantities(record: {
+    regularQuantity: number;
+    vegQuantity: number;
+    totalQuantity: number;
+  }) {
+    if (
+      record.totalQuantity > 0 &&
+      record.regularQuantity === 0 &&
+      record.vegQuantity === 0
+    ) {
+      return {
+        regularQuantity: record.totalQuantity,
+        vegQuantity: 0,
+        totalQuantity: record.totalQuantity,
+      };
+    }
+    return {
+      regularQuantity: record.regularQuantity,
+      vegQuantity: record.vegQuantity,
+      totalQuantity: record.totalQuantity,
     };
   }
 }

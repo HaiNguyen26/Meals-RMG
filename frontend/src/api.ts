@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE ?? '/meals-rmg/api';
 
 type LoginResponse = {
   accessToken: string;
@@ -17,6 +17,8 @@ export type Summary = {
   totalQuantity: number;
   departments: {
     departmentId: string;
+    regularQuantity: number;
+    vegQuantity: number;
     totalQuantity: number;
     updatedAt: string;
     updatedBy: string | null;
@@ -27,6 +29,8 @@ export type DepartmentLunch = {
   id: string;
   departmentId: string;
   date: string;
+  regularQuantity: number;
+  vegQuantity: number;
   totalQuantity: number;
   updatedAt: string | null;
   updatedBy: string | null;
@@ -91,9 +95,25 @@ export async function fetchAuditHistory(token: string, limit = 200) {
   );
 }
 
+export async function clearDepartmentLunch(
+  date: string,
+  departmentId: string,
+  token: string,
+) {
+  return fetchJson<DepartmentLunch>('/lunch/department/clear', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ date, departmentId }),
+  });
+}
+
 export async function setDepartmentLunch(
   date: string,
-  totalQuantity: number,
+  regularQuantity: number,
+  vegQuantity: number,
   token: string,
 ) {
   return fetchJson<DepartmentLunch>('/lunch/department', {
@@ -102,7 +122,7 @@ export async function setDepartmentLunch(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ date, totalQuantity }),
+    body: JSON.stringify({ date, regularQuantity, vegQuantity }),
   });
 }
 

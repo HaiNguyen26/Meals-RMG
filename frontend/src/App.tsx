@@ -6,6 +6,7 @@ import './App.css'
 import logo from '../LogoRMG.png'
 import {
     API_BASE,
+    clearDepartmentLunch,
     fetchAuditHistory,
     fetchDepartmentHistory,
     fetchDepartmentLunch,
@@ -149,6 +150,20 @@ function App() {
         () => summary?.totalQuantity ?? 0,
         [summary],
     )
+    const totalRegular = useMemo(() => {
+        if (!summary) return 0
+        return summary.departments.reduce(
+            (sum, row) => sum + (row.regularQuantity ?? 0),
+            0,
+        )
+    }, [summary])
+    const totalVeg = useMemo(() => {
+        if (!summary) return 0
+        return summary.departments.reduce(
+            (sum, row) => sum + (row.vegQuantity ?? 0),
+            0,
+        )
+    }, [summary])
 
     const refreshData = useCallback(async () => {
         if (!auth) return
@@ -242,7 +257,8 @@ function App() {
         try {
             await setDepartmentLunch(
                 date,
-                departmentLunch.totalQuantity,
+                departmentLunch.regularQuantity,
+                departmentLunch.vegQuantity,
                 auth.accessToken,
             )
             setShowToast(true)
@@ -261,6 +277,17 @@ function App() {
             await refreshData()
             setLockToast(true)
             window.setTimeout(() => setLockToast(false), 2000)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleClearDepartment = async (departmentId: string) => {
+        if (!auth || role !== 'admin') return
+        setLoading(true)
+        try {
+            await clearDepartmentLunch(date, departmentId, auth.accessToken)
+            await refreshData()
         } finally {
             setLoading(false)
         }
@@ -354,6 +381,7 @@ function App() {
                                 showLockConfirm={showLockConfirm}
                                 setShowLockConfirm={setShowLockConfirm}
                                 onLock={handleLock}
+                                onClearDepartment={handleClearDepartment}
                                 dateLabel={dateLabel}
                                 lockTimeLabel={lockWindowLabel}
                                 onLogout={handleLogout}
@@ -373,6 +401,8 @@ function App() {
                                 auth={auth!}
                                 summary={summary}
                                 totalQuantity={totalQuantity}
+                                totalRegular={totalRegular}
+                                totalVeg={totalVeg}
                                 updatedDepartmentId={updatedDepartmentId}
                                 syncPulse={syncPulse}
                                 onLogout={handleLogout}
@@ -641,6 +671,31 @@ function ManagerPage({
     setDepartmentLunchState: React.Dispatch<React.SetStateAction<DepartmentLunch | null>>
     onLogout: () => void
 }) {
+    const historyRows = useMemo(
+        () =>
+            history.map((row, index) => ({
+                ...row,
+                previousQuantity: history[index + 1]?.totalQuantity ?? null,
+                previousRegular: history[index + 1]?.regularQuantity ?? null,
+                previousVeg: history[index + 1]?.vegQuantity ?? null,
+            })),
+        [history],
+    )
+
+    const totalQuantity =
+        (departmentLunch?.regularQuantity ?? 0) + (departmentLunch?.vegQuantity ?? 0)
+
+    const updateQuantity = (field: 'regularQuantity' | 'vegQuantity', delta: number) => {
+        setDepartmentLunchState((prev) =>
+            prev
+                ? {
+                      ...prev,
+                      [field]: Math.max(0, prev[field] + delta),
+                  }
+                : prev,
+        )
+    }
+
     return (
         <div className="app-shell">
             <Sidebar
@@ -684,22 +739,11 @@ function ManagerPage({
                             <div className="employee-card-bg">🍱</div>
                             <div className="card-title">Số suất ăn</div>
                             <div className="quantity-control">
+                                <span className="muted">Suất thường</span>
                                 <button
                                     className="btn btn-ghost"
                                     type="button"
-                                    onClick={() =>
-                                        setDepartmentLunchState((prev) =>
-                                            prev
-                                                ? {
-                                                    ...prev,
-                                                    totalQuantity: Math.max(
-                                                        0,
-                                                        prev.totalQuantity - 1,
-                                                    ),
-                                                }
-                                                : prev,
-                                        )
-                                    }
+                                    onClick={() => updateQuantity('regularQuantity', -1)}
                                     disabled={!departmentLunch || isLocked || !canEditDepartment}
                                 >
                                     −
@@ -707,13 +751,13 @@ function ManagerPage({
                                 <input
                                     type="number"
                                     min={0}
-                                    value={departmentLunch?.totalQuantity ?? 0}
+                                    value={departmentLunch?.regularQuantity ?? 0}
                                     onChange={(event) =>
                                         setDepartmentLunchState((prev) =>
                                             prev
                                                 ? {
                                                     ...prev,
-                                                    totalQuantity: Number(event.target.value || 0),
+                                                    regularQuantity: Number(event.target.value || 0),
                                                 }
                                                 : prev,
                                         )
@@ -723,17 +767,49 @@ function ManagerPage({
                                 <button
                                     className="btn btn-ghost"
                                     type="button"
-                                    onClick={() =>
-                                        setDepartmentLunchState((prev) =>
-                                            prev
-                                                ? { ...prev, totalQuantity: prev.totalQuantity + 1 }
-                                                : prev,
-                                        )
-                                    }
+                                    onClick={() => updateQuantity('regularQuantity', 1)}
                                     disabled={!departmentLunch || isLocked || !canEditDepartment}
                                 >
                                     +
                                 </button>
+                            </div>
+                            <div className="quantity-control">
+                                <span className="muted">Suất chay</span>
+                                <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    onClick={() => updateQuantity('vegQuantity', -1)}
+                                    disabled={!departmentLunch || isLocked || !canEditDepartment}
+                                >
+                                    −
+                                </button>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={departmentLunch?.vegQuantity ?? 0}
+                                    onChange={(event) =>
+                                        setDepartmentLunchState((prev) =>
+                                            prev
+                                                ? {
+                                                    ...prev,
+                                                    vegQuantity: Number(event.target.value || 0),
+                                                }
+                                                : prev,
+                                        )
+                                    }
+                                    disabled={!departmentLunch || isLocked || !canEditDepartment}
+                                />
+                                <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    onClick={() => updateQuantity('vegQuantity', 1)}
+                                    disabled={!departmentLunch || isLocked || !canEditDepartment}
+                                >
+                                    +
+                                </button>
+                            </div>
+                            <div className="manager-helper">
+                                Tổng suất: <strong>{totalQuantity}</strong>
                             </div>
                             <div className="manager-helper">
                                 Tổng số người dự kiến ăn trưa của phòng
@@ -769,15 +845,21 @@ function ManagerPage({
                                     <thead>
                                         <tr>
                                             <th>Ngày</th>
-                                            <th>Số suất đã đăng ký</th>
+                                            <th>Từ → Đến</th>
                                             <th>Thời gian cập nhật</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {history.map((row) => (
+                                        {historyRows.map((row) => (
                                             <tr key={row.id}>
                                                 <td>{row.date}</td>
-                                                <td className="table-number">{row.totalQuantity}</td>
+                                                <td className="table-number">
+                                                    Thường {row.previousRegular ?? '-'} → {row.regularQuantity}
+                                                    {' • '}
+                                                    Chay {row.previousVeg ?? '-'} → {row.vegQuantity}
+                                                    {' • '}
+                                                    Tổng {row.previousQuantity ?? '-'} → {row.totalQuantity}
+                                                </td>
                                                 <td className="muted">
                                                     {row.updatedAt
                                                         ? new Date(row.updatedAt).toLocaleString()
@@ -808,6 +890,7 @@ function AdminPage({
     updatedDepartmentId,
     syncPulse,
     setShowLockConfirm,
+    onClearDepartment,
     dateLabel,
     lockTimeLabel,
     onLogout,
@@ -826,6 +909,7 @@ function AdminPage({
     showLockConfirm: boolean
     setShowLockConfirm: (value: boolean) => void
     onLock: () => void
+    onClearDepartment: (departmentId: string) => void
     dateLabel: string
     lockTimeLabel: string
     onLogout: () => void
@@ -933,9 +1017,12 @@ function AdminPage({
                                         <thead>
                                             <tr>
                                                 <th>PHÒNG BAN</th>
-                                                <th>SỐ LƯỢNG</th>
+                                                <th>THƯỜNG</th>
+                                                <th>CHAY</th>
+                                                <th>TỔNG</th>
                                                 <th>TRẠNG THÁI</th>
                                                 <th>CẬP NHẬT</th>
+                                                <th>HÀNH ĐỘNG</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -954,6 +1041,12 @@ function AdminPage({
                                                         }
                                                     >
                                                         <td className="table-department">{department}</td>
+                                                        <td className="table-number">
+                                                            {row?.regularQuantity ?? 0}
+                                                        </td>
+                                                        <td className="table-number">
+                                                            {row?.vegQuantity ?? 0}
+                                                        </td>
                                                         <td className="table-number table-number--strong">
                                                             {row?.totalQuantity ?? 0}
                                                         </td>
@@ -969,6 +1062,24 @@ function AdminPage({
                                                             {row?.updatedAt
                                                                 ? new Date(row.updatedAt).toLocaleString()
                                                                 : '-'}
+                                                        </td>
+                                                        <td>
+                                                            <button
+                                                                className="btn btn-ghost btn-sm"
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (
+                                                                        window.confirm(
+                                                                            `Xóa đăng ký của phòng ${department}?`,
+                                                                        )
+                                                                    ) {
+                                                                        onClearDepartment(department)
+                                                                    }
+                                                                }}
+                                                                disabled={loading}
+                                                            >
+                                                                Xóa
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 )
@@ -1103,6 +1214,8 @@ function KitchenPage({
     auth,
     summary,
     totalQuantity,
+    totalRegular,
+    totalVeg,
     updatedDepartmentId,
     syncPulse,
     onLogout,
@@ -1113,6 +1226,8 @@ function KitchenPage({
     auth: AuthState
     summary: Summary | null
     totalQuantity: number
+    totalRegular: number
+    totalVeg: number
     updatedDepartmentId: string | null
     syncPulse: boolean
     onLogout: () => void
@@ -1146,20 +1261,34 @@ function KitchenPage({
                             >
                                 {totalQuantity}
                             </div>
+                            <div className="kitchen-total-sub">
+                                Thường {totalRegular} • Chay {totalVeg}
+                            </div>
                             <div className="kitchen-date-card">{now.toLocaleString()}</div>
                             <div className="kitchen-status">
                                 {isLocked ? '🔒 Đã khóa' : '🟡 Chưa khóa'}
                             </div>
                         </div>
                         <div className="kitchen-grid">
-                            {summary.departments.map((row) => (
-                                <div key={row.departmentId} className="kitchen-card">
-                                    <div className="kitchen-card-title">
-                                        {row.departmentId.toUpperCase()}
+                            {DEPARTMENTS.map((department) => {
+                                const row = summary.departments.find(
+                                    (item) => item.departmentId === department,
+                                )
+                                return (
+                                    <div key={department} className="kitchen-card">
+                                        <div className="kitchen-card-title">
+                                            {department.toUpperCase()}
+                                        </div>
+                                        <div className="kitchen-card-value">
+                                            {row?.totalQuantity ?? 0}
+                                        </div>
+                                        <div className="kitchen-card-sub">
+                                            Chay {row?.vegQuantity ?? 0} • Thường{' '}
+                                            {row?.regularQuantity ?? 0}
+                                        </div>
                                     </div>
-                                    <div className="kitchen-card-value">{row.totalQuantity}</div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     </section>
                 </main>

@@ -36,6 +36,8 @@ model DepartmentLunch {
   id            String   @id @default(uuid())
   departmentId  String
   date          DateTime
+  regularQuantity Int    @default(0)
+  vegQuantity   Int      @default(0)
   totalQuantity Int      @default(0)
   updatedBy     String?
   updatedAt     DateTime @updatedAt
@@ -49,6 +51,8 @@ model DepartmentLunchHistory {
   id            String   @id @default(uuid())
   departmentId  String
   date          DateTime
+  regularQuantity Int    @default(0)
+  vegQuantity   Int      @default(0)
   totalQuantity Int
   updatedBy     String?
   createdAt     DateTime @default(now())
