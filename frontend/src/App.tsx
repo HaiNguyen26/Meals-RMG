@@ -6,6 +6,7 @@ import './App.css'
 import logo from '../LogoRMG.png'
 import {
     API_BASE,
+    ApiError,
     clearDepartmentLunch,
     fetchAuditHistory,
     fetchDepartmentHistory,
@@ -13,6 +14,7 @@ import {
     fetchLock,
     fetchSummary,
     login,
+    refreshTokens,
     setDepartmentLunch,
     setLock,
     type DepartmentLunch,
@@ -127,6 +129,39 @@ function App() {
     const [syncPulse, setSyncPulse] = useState(false)
     const previousLocked = useRef<boolean | null>(null)
 
+    const resetAuth = useCallback(() => {
+        clearAuth()
+        setAuth(null)
+        setSummary(null)
+        setDepartmentLunchState(null)
+        setLockState(null)
+        setHistory([])
+        setAudit([])
+    }, [])
+
+    const withAccessToken = useCallback(
+        async <T,>(action: (token: string) => Promise<T>): Promise<T | null> => {
+            if (!auth) return null
+            try {
+                return await action(auth.accessToken)
+            } catch (error) {
+                if (error instanceof ApiError && error.status === 401 && auth.refreshToken) {
+                    try {
+                        const refreshed = await refreshTokens(auth.refreshToken)
+                        setAuth(refreshed)
+                        saveAuth(refreshed)
+                        return await action(refreshed.accessToken)
+                    } catch {
+                        resetAuth()
+                        return null
+                    }
+                }
+                throw error
+            }
+        },
+        [auth, resetAuth],
+    )
+
   const targetDate = useMemo(() => getTargetDate(now), [now])
   const date = useMemo(() => targetDate.toISOString().slice(0, 10), [targetDate])
   const dateLabel = useMemo(() => formatDate(targetDate), [targetDate])
@@ -167,31 +202,48 @@ function App() {
 
     const refreshData = useCallback(async () => {
         if (!auth) return
-        const lock = await fetchLock(date, auth.accessToken)
-        setLockState(lock)
+        try {
+            const lock = await withAccessToken((token) => fetchLock(date, token))
+            if (!lock) return
+            setLockState(lock)
 
-        if (canViewSummary) {
-            const summaryResponse = await fetchSummary(date, auth.accessToken)
-            setSummary(summaryResponse)
-            if (role === 'admin') {
-                const auditRows = await fetchAuditHistory(auth.accessToken)
-                setAudit(auditRows)
+            if (canViewSummary) {
+                const summaryResponse = await withAccessToken((token) =>
+                    fetchSummary(date, token),
+                )
+                if (!summaryResponse) return
+                setSummary(summaryResponse)
+                if (role === 'admin') {
+                    const auditRows = await withAccessToken((token) =>
+                        fetchAuditHistory(token),
+                    )
+                    if (!auditRows) return
+                    setAudit(auditRows)
+                }
+            } else {
+                setSummary(null)
+                setAudit([])
             }
-        } else {
-            setSummary(null)
-            setAudit([])
-        }
 
-        if (canEditDepartment) {
-            const department = await fetchDepartmentLunch(date, auth.accessToken)
-            setDepartmentLunchState(department)
-            const historyRows = await fetchDepartmentHistory(auth.accessToken, 5)
-            setHistory(historyRows)
-        } else {
-            setDepartmentLunchState(null)
-            setHistory([])
+            if (canEditDepartment) {
+                const department = await withAccessToken((token) =>
+                    fetchDepartmentLunch(date, token),
+                )
+                if (!department) return
+                setDepartmentLunchState(department)
+                const historyRows = await withAccessToken((token) =>
+                    fetchDepartmentHistory(token, 5),
+                )
+                if (!historyRows) return
+                setHistory(historyRows)
+            } else {
+                setDepartmentLunchState(null)
+                setHistory([])
+            }
+        } catch (error) {
+            console.error(error)
         }
-    }, [auth, canViewSummary, date, role, canEditDepartment])
+    }, [auth, canViewSummary, date, role, canEditDepartment, withAccessToken])
 
     useEffect(() => {
         if (!auth) return
@@ -255,12 +307,15 @@ function App() {
         if (!auth || isLocked || !departmentLunch) return
         setLoading(true)
         try {
-            await setDepartmentLunch(
-                date,
-                departmentLunch.regularQuantity,
-                departmentLunch.vegQuantity,
-                auth.accessToken,
+            const result = await withAccessToken((token) =>
+                setDepartmentLunch(
+                    date,
+                    departmentLunch.regularQuantity,
+                    departmentLunch.vegQuantity,
+                    token,
+                ),
             )
+            if (!result) return
             setShowToast(true)
             window.setTimeout(() => setShowToast(false), 1800)
             await refreshData()
@@ -273,7 +328,8 @@ function App() {
         if (!auth || !canLock) return
         setLoading(true)
         try {
-            await setLock(date, true, auth.accessToken)
+            const result = await withAccessToken((token) => setLock(date, true, token))
+            if (!result) return
             await refreshData()
             setLockToast(true)
             window.setTimeout(() => setLockToast(false), 2000)
@@ -286,7 +342,10 @@ function App() {
         if (!auth || role !== 'admin') return
         setLoading(true)
         try {
-            await clearDepartmentLunch(date, departmentId, auth.accessToken)
+            const result = await withAccessToken((token) =>
+                clearDepartmentLunch(date, departmentId, token),
+            )
+            if (!result) return
             await refreshData()
         } finally {
             setLoading(false)
@@ -309,13 +368,7 @@ function App() {
     }
 
     const handleLogout = () => {
-        clearAuth()
-        setAuth(null)
-        setSummary(null)
-        setDepartmentLunchState(null)
-        setLockState(null)
-        setHistory([])
-        setAudit([])
+        resetAuth()
     }
 
     const registeredCount = useMemo(() => {

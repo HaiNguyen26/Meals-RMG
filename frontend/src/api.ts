@@ -36,11 +36,21 @@ export type DepartmentLunch = {
   updatedBy: string | null;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${input}`, init);
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(message || 'Request failed');
+    throw new ApiError(response.status, message || 'Request failed');
   }
   return (await response.json()) as T;
 }
@@ -50,6 +60,14 @@ export async function login(username: string, password: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function refreshTokens(refreshToken: string) {
+  return fetchJson<LoginResponse>('/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
   });
 }
 
