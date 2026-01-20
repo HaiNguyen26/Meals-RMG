@@ -83,7 +83,7 @@ const getRolePath = (role?: string | null) => {
 }
 
 const loadStoredAuth = (): AuthState | null => {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     try {
         return JSON.parse(raw) as AuthState
@@ -93,11 +93,11 @@ const loadStoredAuth = (): AuthState | null => {
 }
 
 const saveAuth = (auth: AuthState) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth))
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(auth))
 }
 
 const clearAuth = () => {
-    localStorage.removeItem(STORAGE_KEY)
+    sessionStorage.removeItem(STORAGE_KEY)
 }
 
 function App() {
