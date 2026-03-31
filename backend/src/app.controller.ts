@@ -5,7 +5,7 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  /** Use /meals-rmg/ (SPA) for the app; keep a simple probe that is not the SPA wildcard. */
+  /** GET /meals-rmg/api/health — avoid colliding with SPA under /meals-rmg/. */
   @Get('health')
   getHello(): string {
     return this.appService.getHello();

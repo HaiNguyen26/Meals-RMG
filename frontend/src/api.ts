@@ -1,12 +1,19 @@
 const normalizeBase = (value: string) => value.replace(/\/+$/, '');
 
+/** Site mount (same as Vite base pathname, without trailing slash). */
+const PUBLIC_PREFIX = normalizeBase(
+  import.meta.env.VITE_PUBLIC_PREFIX ?? '/meals-rmg',
+);
+
 /** Path bases must start with / so fetch() is never resolved relative to /meals-rmg/kitchen. */
 function resolveApiBase(): string {
   const raw =
     import.meta.env.VITE_API_BASE ??
-    (import.meta.env.DEV ? 'http://localhost:3000/meals-rmg' : '/meals-rmg');
+    (import.meta.env.DEV
+      ? `http://localhost:3000${PUBLIC_PREFIX}/api`
+      : `${PUBLIC_PREFIX}/api`);
   let v = normalizeBase(String(raw).trim());
-  if (!v) v = '/meals-rmg';
+  if (!v) v = `${PUBLIC_PREFIX}/api`;
   if (v.startsWith('http://') || v.startsWith('https://')) return v;
   return v.startsWith('/') ? v : `/${v}`;
 }
@@ -86,7 +93,7 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
     throw new ApiError(
       response.status,
       looksHtml
-        ? `API trả về HTML (${response.url}). Kiểm tra nginx proxy tới Nest và prefix /meals-rmg.`
+        ? `API trả về HTML (${response.url}). Kiểm tra nginx → Nest và REST tại /meals-rmg/api.`
         : text || 'Request failed',
     );
   }
@@ -234,12 +241,20 @@ export async function fetchMonthlySummary(month: string, token: string) {
   );
 }
 
-/** Engine.IO path; must stay in sync with backend when app is served under a path prefix (e.g. /meals-rmg). */
+/** Engine.IO path; backend uses MEALS_PUBLIC_PATH + /socket.io (default /meals-rmg/socket.io). */
 export function getSocketIoPath(): string {
   if (API_BASE.startsWith('http')) {
     return '/socket.io';
   }
-  return `${API_BASE}/socket.io`;
+  return `${PUBLIC_PREFIX}/socket.io`;
+}
+
+/** Socket.IO namespace URL (Nest gateway is /realtime; not under /api). */
+export function getSocketIoUrl(): string {
+  if (API_BASE.startsWith('http')) {
+    return `${new URL(API_BASE).origin}/realtime`;
+  }
+  return '/realtime';
 }
 
 export { API_BASE };

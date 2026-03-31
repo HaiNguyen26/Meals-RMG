@@ -7,7 +7,7 @@ const defaultDistPath = () =>
   process.env.FRONTEND_DIST_PATH ??
   join(__dirname, '..', '..', 'frontend', 'dist');
 
-/** Serves Vite build + SPA fallback on the same port as the API (nginx can proxy only to Node). */
+/** SPA + assets at /meals-rmg/; API is /meals-rmg/api (useGlobalPrefix on Nest). */
 @Module({})
 export class SpaStaticModule {
   static register(): DynamicModule {
@@ -23,18 +23,15 @@ export class SpaStaticModule {
       imports: [
         ServeStaticModule.forRoot({
           rootPath,
-          useGlobalPrefix: true,
-          serveRoot: '/',
+          useGlobalPrefix: false,
+          serveRoot: '/meals-rmg/',
           serveStaticOptions: {
             index: false,
             fallthrough: true,
           },
-          // path-to-regexp v8 (Nest serve-static@5): * is invalid; use {/*path} suffix.
           exclude: [
-            '/meals-rmg/auth{/*path}',
-            '/meals-rmg/lunch{/*path}',
+            '/meals-rmg/api{/*path}',
             '/meals-rmg/socket.io{/*path}',
-            '/meals-rmg/health',
           ],
         }),
       ],

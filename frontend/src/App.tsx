@@ -5,9 +5,9 @@ import { io } from 'socket.io-client'
 import './App.css'
 import logo from '../LogoRMG.png'
 import {
-    API_BASE,
     ApiError,
     getSocketIoPath,
+    getSocketIoUrl,
     clearDepartmentLunch,
     fetchMonthlySummary,
     fetchAuditHistory,
@@ -329,7 +329,7 @@ function App() {
 
     useEffect(() => {
         if (!auth) return
-        const socket = io(`${API_BASE}/realtime`, {
+        const socket = io(getSocketIoUrl(), {
             path: getSocketIoPath(),
             auth: {
                 role: auth.user.role,
