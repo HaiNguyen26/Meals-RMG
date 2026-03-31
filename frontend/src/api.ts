@@ -2,7 +2,7 @@ const normalizeBase = (value: string) => value.replace(/\/+$/, '');
 
 const API_BASE = normalizeBase(
   import.meta.env.VITE_API_BASE ??
-    (import.meta.env.DEV ? 'http://localhost:3000' : '/meals-rmg'),
+    (import.meta.env.DEV ? 'http://localhost:3000/meals-rmg' : '/meals-rmg'),
 );
 
 type LoginResponse = {

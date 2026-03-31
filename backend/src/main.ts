@@ -6,6 +6,8 @@ import { RedisIoAdapter } from './realtime/redis.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Match frontend API_BASE (/meals-rmg) so reverse proxy can forward the full path unchanged.
+  app.setGlobalPrefix('meals-rmg');
   app.enableCors({ origin: true });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
