@@ -29,10 +29,11 @@ export class SpaStaticModule {
             index: false,
             fallthrough: true,
           },
+          // path-to-regexp v8 (Nest serve-static@5): * is invalid; use {/*path} suffix.
           exclude: [
-            '/meals-rmg/auth*',
-            '/meals-rmg/lunch*',
-            '/meals-rmg/socket.io*',
+            '/meals-rmg/auth{/*path}',
+            '/meals-rmg/lunch{/*path}',
+            '/meals-rmg/socket.io{/*path}',
             '/meals-rmg/health',
           ],
         }),
