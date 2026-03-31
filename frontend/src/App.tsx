@@ -7,6 +7,7 @@ import logo from '../LogoRMG.png'
 import {
     API_BASE,
     ApiError,
+    getSocketIoPath,
     clearDepartmentLunch,
     fetchMonthlySummary,
     fetchAuditHistory,
@@ -329,6 +330,7 @@ function App() {
     useEffect(() => {
         if (!auth) return
         const socket = io(`${API_BASE}/realtime`, {
+            path: getSocketIoPath(),
             auth: {
                 role: auth.user.role,
             },

@@ -202,5 +202,13 @@ export async function fetchMonthlySummary(month: string, token: string) {
   );
 }
 
+/** Engine.IO path; must stay in sync with backend when app is served under a path prefix (e.g. /meals-rmg). */
+export function getSocketIoPath(): string {
+  if (API_BASE.startsWith('http')) {
+    return '/socket.io';
+  }
+  return `${API_BASE}/socket.io`;
+}
+
 export { API_BASE };
 

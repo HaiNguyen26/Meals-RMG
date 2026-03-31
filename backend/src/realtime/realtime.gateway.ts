@@ -14,9 +14,13 @@ type JoinDatePayload = {
     date: string;
 };
 
+const publicPath = process.env.MEALS_PUBLIC_PATH?.replace(/\/+$/, '') ?? '';
+const socketIoPath = publicPath ? `${publicPath}/socket.io` : '/socket.io';
+
 @WebSocketGateway({
     namespace: '/realtime',
     cors: { origin: true },
+    path: socketIoPath,
 })
 export class RealtimeGateway {
     @WebSocketServer()
