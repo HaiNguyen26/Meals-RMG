@@ -1059,6 +1059,173 @@ tbody td {
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.2);
 }
 
+.modal-card--wide {
+  width: min(520px, 94%);
+  max-height: min(85vh, 640px);
+  display: flex;
+  flex-direction: column;
+}
+
+.kitchen-actual-modal .kitchen-actual-rows {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 4px;
+  max-height: 52vh;
+}
+
+.kitchen-actual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.kitchen-actual-row:last-child {
+  border-bottom: none;
+}
+
+.kitchen-actual-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kitchen-actual-dept {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.kitchen-actual-reg {
+  font-size: 12px;
+}
+
+.kitchen-actual-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kitchen-actual-input {
+  width: 88px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  font-size: 14px;
+}
+
+.kitchen-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.kitchen-card-readonly {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.kitchen-month-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.kitchen-aggregate-modal .kitchen-aggregate-month-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.kitchen-aggregate-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+@media (max-width: 520px) {
+  .kitchen-aggregate-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kitchen-aggregate-kpi {
+  border-radius: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.kitchen-aggregate-kpi--surplus {
+  background: rgba(234, 88, 12, 0.08);
+  border-color: rgba(234, 88, 12, 0.25);
+}
+
+.kitchen-aggregate-kpi--short {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.kitchen-aggregate-kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.kitchen-aggregate-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 6px 0;
+}
+
+.kitchen-aggregate-kpi-hint {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.kitchen-aggregate-table-wrap {
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  margin-bottom: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+}
+
+.kitchen-aggregate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.kitchen-aggregate-table th,
+.kitchen-aggregate-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.kitchen-aggregate-table th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
 .modal-card h3 {
   margin: 0 0 8px;
 }

@@ -17,6 +17,8 @@ type SetDepartmentInput = {
 
 @Injectable()
 export class LunchService {
+  private static readonly LOCK_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeGateway: RealtimeGateway,
@@ -104,6 +106,9 @@ export class LunchService {
         regularQuantity: 0,
         vegQuantity: 0,
         totalQuantity: 0,
+        actualQuantity: 0,
+        actualUpdatedAt: null,
+        actualUpdatedBy: null,
         updatedAt: null,
         updatedBy: null,
       };
@@ -142,6 +147,7 @@ export class LunchService {
         regularQuantity: quantities.regularQuantity,
         vegQuantity: quantities.vegQuantity,
         totalQuantity: quantities.totalQuantity,
+        actualQuantity: row.actualQuantity,
         updatedAt: row.updatedAt.toISOString(),
         updatedBy: row.updatedBy ?? null,
       };
@@ -153,8 +159,92 @@ export class LunchService {
     return {
       date,
       totalQuantity,
+      totalActualQuantity: departments.reduce(
+        (sum, row) => sum + row.actualQuantity,
+        0,
+      ),
       departments,
     };
+  }
+
+  async setActualLunch(
+    date: string,
+    departmentId: string,
+    actualQuantity: number,
+    updatedBy?: string | null,
+  ) {
+    if (!departmentId) {
+      throw new BadRequestException('Missing department');
+    }
+    if (actualQuantity < 0) {
+      throw new BadRequestException('Actual quantity must be >= 0');
+    }
+    await this.purgePastDataIfNeeded();
+    const dateValue = this.normalizeDate(date);
+    const record = await this.prisma.departmentLunch.upsert({
+      where: { departmentId_date: { departmentId, date: dateValue } },
+      create: {
+        departmentId,
+        date: dateValue,
+        regularQuantity: 0,
+        vegQuantity: 0,
+        totalQuantity: 0,
+        actualQuantity,
+        actualUpdatedAt: new Date(),
+        actualUpdatedBy: updatedBy ?? null,
+      },
+      update: {
+        actualQuantity,
+        actualUpdatedAt: new Date(),
+        actualUpdatedBy: updatedBy ?? null,
+      },
+    });
+    const response = this.mapDepartmentLunch(record);
+    this.realtimeGateway.emitLunchUpdated(response.date, {
+      type: 'department',
+      department: response,
+    });
+    return response;
+  }
+
+  async monthlySummary(month: string) {
+    const startDate = this.parseMonthStart(month);
+    const endDate = new Date(
+      Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1),
+    );
+    const rows = await this.prisma.departmentLunch.findMany({
+      where: {
+        date: {
+          gte: startDate,
+          lt: endDate,
+        },
+      },
+    });
+    const map = new Map<
+      string,
+      {
+        departmentId: string;
+        registeredTotal: number;
+        actualTotal: number;
+        variance: number;
+      }
+    >();
+    for (const row of rows) {
+      const quantities = this.normalizeQuantities(row);
+      const current = map.get(row.departmentId) ?? {
+        departmentId: row.departmentId,
+        registeredTotal: 0,
+        actualTotal: 0,
+        variance: 0,
+      };
+      current.registeredTotal += quantities.totalQuantity;
+      current.actualTotal += row.actualQuantity ?? 0;
+      current.variance = current.registeredTotal - current.actualTotal;
+      map.set(row.departmentId, current);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => Math.abs(b.variance) - Math.abs(a.variance),
+    );
   }
 
   async setLock(date: string, locked: boolean, actor: string | null) {
@@ -269,8 +359,8 @@ export class LunchService {
   }
 
   private getTargetDate(now = new Date()) {
-    const target = new Date(now);
-    if (now.getHours() >= 12) {
+    const target = this.parseDateKey(this.getDateKey(now));
+    if (this.getHour(now) >= 12) {
       target.setDate(target.getDate() + 1);
     }
     target.setHours(0, 0, 0, 0);
@@ -284,25 +374,24 @@ export class LunchService {
   }
 
   private isTimeLocked(date: Date) {
+    if (process.env.DISABLE_TIME_LOCK === 'true') {
+      return false;
+    }
     const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(date);
-    target.setHours(0, 0, 0, 0);
-
-    if (today.getTime() !== target.getTime()) {
+    const targetDate = date.toISOString().slice(0, 10);
+    if (this.getDateKey(now) !== targetDate) {
       return false;
     }
 
-    const hour = now.getHours();
+    const hour = this.getHour(now);
     return hour >= 9 && hour < 12;
   }
 
   private async purgePastDataIfNeeded(now = new Date()) {
-    if (now.getHours() < 12) {
+    if (this.getHour(now) < 12) {
       return;
     }
-    const today = this.normalizeDate(now);
+    const today = this.normalizeDate(this.getDateKey(now));
     await this.prisma.departmentLunchHistory.deleteMany({
       where: { date: { lt: today } },
     });
@@ -326,6 +415,57 @@ export class LunchService {
     return new Date(Date.UTC(year, month - 1, day));
   }
 
+  private getDateKey(date: Date) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: LunchService.LOCK_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    if (!year || !month || !day) {
+      throw new BadRequestException('Cannot resolve current date');
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  private getHour(date: Date) {
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: LunchService.LOCK_TIMEZONE,
+      hour: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(date)
+      .find((part) => part.type === 'hour')?.value;
+    const parsed = Number(hour);
+    if (Number.isNaN(parsed)) {
+      throw new BadRequestException('Cannot resolve current hour');
+    }
+    return parsed;
+  }
+
+  private parseDateKey(dateKey: string) {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  private parseMonthStart(month: string) {
+    const [yearRaw, monthRaw] = month.split('-');
+    const year = Number(yearRaw);
+    const monthValue = Number(monthRaw);
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(monthValue) ||
+      monthValue < 1 ||
+      monthValue > 12
+    ) {
+      throw new BadRequestException('Invalid month format. Use YYYY-MM');
+    }
+    return new Date(Date.UTC(year, monthValue - 1, 1));
+  }
+
   private mapDepartmentLunch(record: {
     id: string;
     departmentId: string;
@@ -333,6 +473,9 @@ export class LunchService {
     regularQuantity: number;
     vegQuantity: number;
     totalQuantity: number;
+    actualQuantity: number;
+    actualUpdatedAt: Date | null;
+    actualUpdatedBy: string | null;
     updatedAt: Date;
     updatedBy: string | null;
   }) {
@@ -344,6 +487,9 @@ export class LunchService {
       regularQuantity: quantities.regularQuantity,
       vegQuantity: quantities.vegQuantity,
       totalQuantity: quantities.totalQuantity,
+      actualQuantity: record.actualQuantity,
+      actualUpdatedAt: record.actualUpdatedAt?.toISOString() ?? null,
+      actualUpdatedBy: record.actualUpdatedBy ?? null,
       updatedAt: record.updatedAt.toISOString(),
       updatedBy: record.updatedBy ?? null,
     };

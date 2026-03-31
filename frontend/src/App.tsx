@@ -8,6 +8,7 @@ import {
     API_BASE,
     ApiError,
     clearDepartmentLunch,
+    fetchMonthlySummary,
     fetchAuditHistory,
     fetchDepartmentHistory,
     fetchDepartmentLunch,
@@ -15,9 +16,11 @@ import {
     fetchSummary,
     login,
     refreshTokens,
+    setActualLunch,
     setDepartmentLunch,
     setLock,
     type DepartmentLunch,
+    type MonthlyDepartmentSummary,
     type Summary,
 } from './api'
 
@@ -53,8 +56,46 @@ const formatDate = (date: Date) =>
     year: 'numeric',
   })
 
+const toLocalDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const toMonthKey = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    return `${year}-${month}`
+}
+
+const formatMonthVi = (monthKey: string) => {
+    const [y, m] = monthKey.split('-')
+    if (!y || !m) return monthKey
+    return `${m}/${y}`
+}
+
+const formatDateKeyVi = (dateKey: string) => {
+    const [y, m, d] = dateKey.split('-')
+    if (!y || !m || !d) return dateKey
+    return `${d}/${m}/${y}`
+}
+
+/** Ô nhập số: không hiển thị 0 mặc định, để trống thay vì "0". */
+const quantityInputDisplay = (n: number | undefined | null) =>
+    n == null || n === 0 ? '' : n
+
 const formatTime = (date: Date) =>
-  date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+  date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+const formatDateTime24 = (date: Date) =>
+  date.toLocaleString('vi-VN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 const DEPARTMENTS = [
     'Warehouse',
     'Production',
@@ -119,6 +160,11 @@ function App() {
     const [loading, setLoading] = useState(false)
     const [history, setHistory] = useState<DepartmentLunch[]>([])
     const [audit, setAudit] = useState<DepartmentLunch[]>([])
+    const [kitchenActualDraft, setKitchenActualDraft] = useState<Record<string, number>>({})
+    const [kitchenActualDate, setKitchenActualDate] = useState(() => toLocalDateKey(new Date()))
+    const [kitchenActualDaySummary, setKitchenActualDaySummary] = useState<Summary | null>(null)
+    const [kitchenMonthlyRows, setKitchenMonthlyRows] = useState<MonthlyDepartmentSummary[]>([])
+    const [kitchenMonth, setKitchenMonth] = useState(() => toMonthKey(new Date()))
     const [updatedDepartmentId, setUpdatedDepartmentId] = useState<string | null>(
         null,
     )
@@ -137,6 +183,8 @@ function App() {
         setLockState(null)
         setHistory([])
         setAudit([])
+        setKitchenActualDraft({})
+        setKitchenMonthlyRows([])
     }, [])
 
     const withAccessToken = useCallback(
@@ -163,7 +211,7 @@ function App() {
     )
 
   const targetDate = useMemo(() => getTargetDate(now), [now])
-  const date = useMemo(() => targetDate.toISOString().slice(0, 10), [targetDate])
+  const date = useMemo(() => toLocalDateKey(targetDate), [targetDate])
   const dateLabel = useMemo(() => formatDate(targetDate), [targetDate])
   const lockCutoff = useMemo(() => {
     const cutoff = new Date(targetDate)
@@ -174,6 +222,7 @@ function App() {
     () => `${formatTime(lockCutoff)}–12:00 • ${dateLabel}`,
     [lockCutoff, dateLabel],
   )
+  const nowLabel = useMemo(() => formatDateTime24(now), [now])
     const isLocked = lockState?.locked ?? false
     const role = auth?.user.role ?? null
 
@@ -199,6 +248,33 @@ function App() {
             0,
         )
     }, [summary])
+
+    useEffect(() => {
+        if (role !== 'kitchen' || !summary) return
+        const next: Record<string, number> = {}
+        for (const dept of DEPARTMENTS) {
+            const row = summary.departments.find((r) => r.departmentId === dept)
+            next[dept] = row?.actualQuantity ?? 0
+        }
+        setKitchenActualDraft(next)
+        setKitchenActualDaySummary(summary)
+    }, [role, summary])
+
+    useEffect(() => {
+        if (role !== 'kitchen') return
+        setKitchenActualDate(date)
+    }, [role, date])
+
+    const resetKitchenDraftFromSummary = useCallback(() => {
+        const source = kitchenActualDaySummary ?? summary
+        if (!source) return
+        const next: Record<string, number> = {}
+        for (const dept of DEPARTMENTS) {
+            const row = source.departments.find((r) => r.departmentId === dept)
+            next[dept] = row?.actualQuantity ?? 0
+        }
+        setKitchenActualDraft(next)
+    }, [kitchenActualDaySummary, summary])
 
     const refreshData = useCallback(async () => {
         if (!auth) return
@@ -352,6 +428,77 @@ function App() {
         }
     }
 
+    const handleLoadKitchenActualByDate = useCallback(
+        async (selectedDate: string): Promise<Summary | null> => {
+            if (!auth || role !== 'kitchen') return null
+            setLoading(true)
+            try {
+                const rows = await withAccessToken((token) => fetchSummary(selectedDate, token))
+                if (!rows) return null
+                setKitchenActualDate(selectedDate)
+                setKitchenActualDaySummary(rows)
+                const next: Record<string, number> = {}
+                for (const dept of DEPARTMENTS) {
+                    const row = rows.departments.find((r) => r.departmentId === dept)
+                    next[dept] = row?.actualQuantity ?? 0
+                }
+                setKitchenActualDraft(next)
+                return rows
+            } finally {
+                setLoading(false)
+            }
+        },
+        [auth, role, withAccessToken],
+    )
+
+    const handleSaveKitchenActual = async (): Promise<void> => {
+        if (!auth || role !== 'kitchen') return
+        setLoading(true)
+        try {
+            const updates = DEPARTMENTS.map((departmentId) => ({
+                departmentId,
+                actualQuantity: Math.max(0, Number(kitchenActualDraft[departmentId] ?? 0)),
+            }))
+            const result = await withAccessToken(async (token) => {
+                await Promise.all(
+                    updates.map((item) =>
+                        setActualLunch(kitchenActualDate, item.departmentId, item.actualQuantity, token),
+                    ),
+                )
+                return true
+            })
+            if (!result) return
+            setShowToast(true)
+            window.setTimeout(() => setShowToast(false), 1800)
+            await handleLoadKitchenActualByDate(kitchenActualDate)
+            await refreshData()
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleLoadKitchenMonthly = useCallback(
+        async (month: string): Promise<MonthlyDepartmentSummary[] | null> => {
+            if (!auth || role !== 'kitchen') return null
+            setLoading(true)
+            try {
+                const rows = await withAccessToken((token) => fetchMonthlySummary(month, token))
+                if (!rows) return null
+                setKitchenMonth(month)
+                setKitchenMonthlyRows(rows)
+                return rows
+            } finally {
+                setLoading(false)
+            }
+        },
+        [auth, role, withAccessToken],
+    )
+
+    useEffect(() => {
+        if (!auth || role !== 'kitchen') return
+        handleLoadKitchenMonthly(kitchenMonth)
+    }, [auth, role, kitchenMonth, handleLoadKitchenMonthly])
+
     const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
         setLoading(true)
@@ -400,6 +547,7 @@ function App() {
                         <RequireAuth auth={auth} role="manager">
                             <ManagerPage
                                 auth={auth!}
+                                nowLabel={nowLabel}
                                 isLocked={isLocked}
                                 lockState={lockState}
                                 departmentLunch={departmentLunch}
@@ -423,6 +571,7 @@ function App() {
                             <AdminPage
                                 auth={auth!}
                                 now={now}
+                                nowLabel={nowLabel}
                                 isLocked={isLocked}
                                 summary={summary}
                                 audit={audit}
@@ -450,12 +599,24 @@ function App() {
                             <KitchenPage
                                 dateLabel={dateLabel}
                                 now={now}
+                                nowLabel={nowLabel}
                                 isLocked={isLocked}
                                 auth={auth!}
                                 summary={summary}
                                 totalQuantity={totalQuantity}
                                 totalRegular={totalRegular}
                                 totalVeg={totalVeg}
+                                actualDate={kitchenActualDate}
+                                actualDateSummary={kitchenActualDaySummary}
+                                actualDraft={kitchenActualDraft}
+                                setActualDraft={setKitchenActualDraft}
+                                onSaveActual={handleSaveKitchenActual}
+                                onResetActualDraft={resetKitchenDraftFromSummary}
+                                loadKitchenActualByDate={handleLoadKitchenActualByDate}
+                                monthlyRows={kitchenMonthlyRows}
+                                monthValue={kitchenMonth}
+                                loadKitchenMonthly={handleLoadKitchenMonthly}
+                                loading={loading}
                                 updatedDepartmentId={updatedDepartmentId}
                                 syncPulse={syncPulse}
                                 onLogout={handleLogout}
@@ -624,12 +785,14 @@ function RequireAuth({
 function Topbar({
     auth,
     dateLabel,
+    nowLabel,
     children,
     onLogout,
     isLocked,
 }: {
     auth: AuthState
     dateLabel: string
+    nowLabel: string
     children?: React.ReactNode
     onLogout: () => void
     isLocked?: boolean
@@ -645,6 +808,7 @@ function Topbar({
             </div>
             <div className="topbar-actions">
                 <span className="chip chip--date">Suất ăn • {dateLabel}</span>
+                <span className="chip">🕒 {nowLabel}</span>
                 {children}
                 {isLocked && <span className="chip chip--lock">🔒 Đã khóa</span>}
                 <span className="chip">
@@ -697,6 +861,7 @@ function Sidebar({
 
 function ManagerPage({
     auth,
+    nowLabel,
     isLocked,
     lockState,
     departmentLunch,
@@ -711,6 +876,7 @@ function ManagerPage({
     onLogout,
 }: {
     auth: AuthState
+    nowLabel: string
     isLocked: boolean
     lockState: { locked: boolean; lockedAt: string | null; lockedBy: string | null } | null
     departmentLunch: DepartmentLunch | null
@@ -758,7 +924,13 @@ function ManagerPage({
                 onSelect={() => null}
             />
             <div className="app-content">
-                <Topbar auth={auth} dateLabel={dateLabel} onLogout={onLogout} isLocked={isLocked}>
+                <Topbar
+                    auth={auth}
+                    dateLabel={dateLabel}
+                    nowLabel={nowLabel}
+                    onLogout={onLogout}
+                    isLocked={isLocked}
+                >
                     {lockState && (
                         <span
                             className={`status-badge ${departmentLunch?.updatedAt
@@ -804,13 +976,16 @@ function ManagerPage({
                                 <input
                                     type="number"
                                     min={0}
-                                    value={departmentLunch?.regularQuantity ?? 0}
+                                    value={quantityInputDisplay(departmentLunch?.regularQuantity)}
                                     onChange={(event) =>
                                         setDepartmentLunchState((prev) =>
                                             prev
                                                 ? {
                                                     ...prev,
-                                                    regularQuantity: Number(event.target.value || 0),
+                                                    regularQuantity: Math.max(
+                                                        0,
+                                                        Number(event.target.value || 0) || 0,
+                                                    ),
                                                 }
                                                 : prev,
                                         )
@@ -839,13 +1014,16 @@ function ManagerPage({
                                 <input
                                     type="number"
                                     min={0}
-                                    value={departmentLunch?.vegQuantity ?? 0}
+                                    value={quantityInputDisplay(departmentLunch?.vegQuantity)}
                                     onChange={(event) =>
                                         setDepartmentLunchState((prev) =>
                                             prev
                                                 ? {
                                                     ...prev,
-                                                    vegQuantity: Number(event.target.value || 0),
+                                                    vegQuantity: Math.max(
+                                                        0,
+                                                        Number(event.target.value || 0) || 0,
+                                                    ),
                                                 }
                                                 : prev,
                                         )
@@ -934,6 +1112,7 @@ function ManagerPage({
 function AdminPage({
     auth,
     now,
+    nowLabel,
     isLocked,
     summary,
     audit,
@@ -951,6 +1130,7 @@ function AdminPage({
 }: {
     auth: AuthState
     now: Date
+    nowLabel: string
     isLocked: boolean
     summary: Summary | null
     audit: DepartmentLunch[]
@@ -1005,7 +1185,13 @@ function AdminPage({
                 }
             />
             <div className="app-content">
-                <Topbar auth={auth} dateLabel={dateLabel} onLogout={onLogout} isLocked={isLocked} />
+                <Topbar
+                    auth={auth}
+                    dateLabel={dateLabel}
+                    nowLabel={nowLabel}
+                    onLogout={onLogout}
+                    isLocked={isLocked}
+                />
                 <main className="container">
                     {activeTab === 'overview' && summary && (
                         <section className="section">
@@ -1152,7 +1338,7 @@ function AdminPage({
                                     <p className="muted">Khóa tự động {lockTimeLabel}</p>
                                 </div>
                                 <div className="section-actions">
-                                    <div className="clock">{now.toLocaleTimeString()}</div>
+                                    <div className="clock">{formatTime(now)}</div>
                                 </div>
                             </div>
                             <div className="card glass-card lock-card">
@@ -1263,28 +1449,101 @@ function AdminPage({
 function KitchenPage({
     dateLabel,
     now,
+    nowLabel,
     isLocked,
     auth,
     summary,
     totalQuantity,
     totalRegular,
     totalVeg,
+    actualDate,
+    actualDateSummary,
+    actualDraft,
+    setActualDraft,
+    onSaveActual,
+    onResetActualDraft,
+    loadKitchenActualByDate,
+    monthlyRows,
+    monthValue,
+    loadKitchenMonthly,
+    loading,
     updatedDepartmentId,
     syncPulse,
     onLogout,
 }: {
     dateLabel: string
     now: Date
+    nowLabel: string
     isLocked: boolean
     auth: AuthState
     summary: Summary | null
     totalQuantity: number
     totalRegular: number
     totalVeg: number
+    actualDate: string
+    actualDateSummary: Summary | null
+    actualDraft: Record<string, number>
+    setActualDraft: React.Dispatch<React.SetStateAction<Record<string, number>>>
+    onSaveActual: () => Promise<void>
+    onResetActualDraft: () => void
+    loadKitchenActualByDate: (date: string) => Promise<Summary | null>
+    monthlyRows: MonthlyDepartmentSummary[]
+    monthValue: string
+    loadKitchenMonthly: (month: string) => Promise<MonthlyDepartmentSummary[] | null>
+    loading: boolean
     updatedDepartmentId: string | null
     syncPulse: boolean
     onLogout: () => void
 }) {
+    const [actualModalOpen, setActualModalOpen] = useState(false)
+    const [aggregateOpen, setAggregateOpen] = useState(false)
+    const [aggregatePhase, setAggregatePhase] = useState<'pick' | 'result'>('pick')
+    const [aggregateMonthPick, setAggregateMonthPick] = useState(monthValue)
+    const [aggregateSnapshot, setAggregateSnapshot] = useState<MonthlyDepartmentSummary[] | null>(
+        null,
+    )
+    const [actualDateInput, setActualDateInput] = useState(actualDate)
+
+    const aggregateStats = useMemo(() => {
+        if (!aggregateSnapshot) return null
+        const merged = DEPARTMENTS.map((dept) => {
+            const r = aggregateSnapshot.find((x) => x.departmentId === dept)
+            return (
+                r ?? {
+                    departmentId: dept,
+                    registeredTotal: 0,
+                    actualTotal: 0,
+                    variance: 0,
+                }
+            )
+        })
+        let totalSurplus = 0
+        let totalShortage = 0
+        for (const r of merged) {
+            totalSurplus += Math.max(0, r.variance)
+            totalShortage += Math.max(0, -r.variance)
+        }
+        return { merged, totalSurplus, totalShortage }
+    }, [aggregateSnapshot])
+
+    const openAggregateModal = () => {
+        setAggregateMonthPick(monthValue)
+        setAggregatePhase('pick')
+        setAggregateSnapshot(null)
+        setAggregateOpen(true)
+    }
+
+    const closeAggregateModal = () => {
+        setAggregateOpen(false)
+        setAggregatePhase('pick')
+        setAggregateSnapshot(null)
+    }
+
+    useEffect(() => {
+        if (!actualModalOpen) return
+        setActualDateInput(actualDate)
+    }, [actualModalOpen, actualDate])
+
     if (!summary) {
         return null
     }
@@ -1300,6 +1559,7 @@ function KitchenPage({
             <div className="app-content kitchen-screen">
                 <div className="kitchen-topbar">
                     <div className="kitchen-user">{auth.user.department}</div>
+                    <div className="chip">🕒 {nowLabel}</div>
                     <button className="btn btn-ghost" type="button" onClick={onLogout}>
                         Đăng xuất
                     </button>
@@ -1317,7 +1577,7 @@ function KitchenPage({
                             <div className="kitchen-total-sub">
                                 Thường {totalRegular} • Chay {totalVeg}
                             </div>
-                            <div className="kitchen-date-card">{now.toLocaleString()}</div>
+                            <div className="kitchen-date-card">{formatDateTime24(now)}</div>
                             <div className="kitchen-status">
                                 {isLocked ? '🔒 Đã khóa' : '🟡 Chưa khóa'}
                             </div>
@@ -1339,13 +1599,307 @@ function KitchenPage({
                                             Chay {row?.vegQuantity ?? 0} • Thường{' '}
                                             {row?.regularQuantity ?? 0}
                                         </div>
+                                        <div className="kitchen-card-sub kitchen-card-readonly">
+                                            Ăn thực tế:{' '}
+                                            <strong>
+                                                {row?.actualQuantity != null && row.actualQuantity > 0
+                                                    ? row.actualQuantity
+                                                    : '—'}
+                                            </strong>
+                                        </div>
                                     </div>
                                 )
                             })}
                         </div>
+                        <div className="section-actions kitchen-actions">
+                            <button
+                                className="btn btn-primary"
+                                type="button"
+                                onClick={() => {
+                                    setActualDateInput(actualDate)
+                                    setActualModalOpen(true)
+                                    void loadKitchenActualByDate(actualDate)
+                                }}
+                                disabled={loading}
+                            >
+                                Cập nhật thực tế
+                            </button>
+                            <button
+                                className="btn"
+                                type="button"
+                                onClick={openAggregateModal}
+                                disabled={loading}
+                            >
+                                Tổng hợp dữ liệu
+                            </button>
+                            <label className="kitchen-month-inline muted">
+                                Xem nhanh tháng
+                                <input
+                                    className="date-input"
+                                    type="month"
+                                    value={monthValue}
+                                    onChange={(event) => {
+                                        void loadKitchenMonthly(event.target.value)
+                                    }}
+                                />
+                            </label>
+                        </div>
+                        <div className="card glass-card table-card" style={{ marginTop: 16 }}>
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Phòng ban</th>
+                                            <th>Đăng ký tháng</th>
+                                            <th>Ăn thực tế tháng</th>
+                                            <th>Chênh lệch</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {monthlyRows.map((row) => (
+                                            <tr key={row.departmentId}>
+                                                <td>{row.departmentId}</td>
+                                                <td className="table-number">{row.registeredTotal}</td>
+                                                <td className="table-number">{row.actualTotal}</td>
+                                                <td className="table-number">{row.variance}</td>
+                                            </tr>
+                                        ))}
+                                        {monthlyRows.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="muted">
+                                                    Chưa có dữ liệu tổng kết tháng
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </section>
                 </main>
             </div>
+            {actualModalOpen && (
+                <div
+                    className="modal-backdrop"
+                    role="presentation"
+                    onClick={() => {
+                        onResetActualDraft()
+                        setActualModalOpen(false)
+                    }}
+                >
+                    <div
+                        className="modal-card modal-card--wide kitchen-actual-modal"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="kitchen-actual-title"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <h3 id="kitchen-actual-title">Cập nhật suất ăn thực tế</h3>
+                        <p className="muted" style={{ margin: '0 0 12px' }}>
+                            Ngày {formatDateKeyVi(actualDateInput)} — điền số phần đã phục vụ thực tế theo từng phòng.
+                        </p>
+                        <label className="kitchen-aggregate-month-field">
+                            <span className="muted">Chọn ngày cập nhật</span>
+                            <input
+                                className="date-input"
+                                type="date"
+                                value={actualDateInput}
+                                onChange={(event) => {
+                                    const nextDate = event.target.value
+                                    setActualDateInput(nextDate)
+                                    void loadKitchenActualByDate(nextDate)
+                                }}
+                            />
+                        </label>
+                        <div className="kitchen-actual-rows">
+                            {DEPARTMENTS.map((department) => {
+                                const row = (actualDateSummary ?? summary).departments.find(
+                                    (item) => item.departmentId === department,
+                                )
+                                const registered = row?.totalQuantity ?? 0
+                                const actualVal =
+                                    actualDraft[department] ?? row?.actualQuantity ?? 0
+                                return (
+                                    <div key={department} className="kitchen-actual-row">
+                                        <div className="kitchen-actual-row-label">
+                                            <span className="kitchen-actual-dept">{department}</span>
+                                            <span className="muted kitchen-actual-reg">
+                                                Đăng ký: {registered}
+                                            </span>
+                                        </div>
+                                        <label className="kitchen-actual-input-wrap">
+                                            <span className="muted">Thực tế</span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                className="kitchen-actual-input"
+                                                value={quantityInputDisplay(actualVal)}
+                                                onChange={(event) =>
+                                                    setActualDraft((prev) => ({
+                                                        ...prev,
+                                                        [department]: Math.max(
+                                                            0,
+                                                            Number(event.target.value || 0) || 0,
+                                                        ),
+                                                    }))
+                                                }
+                                            />
+                                        </label>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <div className="modal-actions">
+                            <button
+                                className="btn btn-ghost"
+                                type="button"
+                                onClick={() => {
+                                    onResetActualDraft()
+                                    setActualModalOpen(false)
+                                }}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                type="button"
+                                disabled={loading}
+                                onClick={async () => {
+                                    await onSaveActual()
+                                    setActualModalOpen(false)
+                                }}
+                            >
+                                {loading ? 'Đang lưu…' : 'Lưu cập nhật'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {aggregateOpen && (
+                <div
+                    className="modal-backdrop"
+                    role="presentation"
+                    onClick={closeAggregateModal}
+                >
+                    <div
+                        className="modal-card modal-card--wide kitchen-aggregate-modal"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="kitchen-aggregate-title"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        {aggregatePhase === 'pick' ? (
+                            <>
+                                <h3 id="kitchen-aggregate-title">Tổng hợp dữ liệu</h3>
+                                <p className="muted" style={{ margin: '0 0 12px' }}>
+                                    Chọn tháng cần phân tích. Sau khi bấm xác nhận, hệ thống so sánh tổng đăng ký và
+                                    suất ăn thực tế đã ghi nhận để cho biết từng phòng đặt dư hoặc đặt thiếu bao
+                                    nhiêu phần trong tháng đó.
+                                </p>
+                                <label className="kitchen-aggregate-month-field">
+                                    <span className="muted">Tháng</span>
+                                    <input
+                                        className="date-input"
+                                        type="month"
+                                        value={aggregateMonthPick}
+                                        onChange={(event) => setAggregateMonthPick(event.target.value)}
+                                    />
+                                </label>
+                                <div className="modal-actions">
+                                    <button className="btn btn-ghost" type="button" onClick={closeAggregateModal}>
+                                        Hủy
+                                    </button>
+                                    <button
+                                        className="btn btn-primary"
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={async () => {
+                                            const rows = await loadKitchenMonthly(aggregateMonthPick)
+                                            if (rows) {
+                                                setAggregateSnapshot(rows)
+                                                setAggregatePhase('result')
+                                            }
+                                        }}
+                                    >
+                                        {loading ? 'Đang tải…' : 'Xác nhận tổng hợp'}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            aggregateStats && (
+                                <>
+                                    <h3 id="kitchen-aggregate-title">
+                                        Kết quả tổng hợp — tháng {formatMonthVi(aggregateMonthPick)}
+                                    </h3>
+                                    <div className="kitchen-aggregate-kpis">
+                                        <div className="kitchen-aggregate-kpi kitchen-aggregate-kpi--surplus">
+                                            <div className="kitchen-aggregate-kpi-label">Tổng phần đặt dư</div>
+                                            <div className="kitchen-aggregate-kpi-value">
+                                                {aggregateStats.totalSurplus}
+                                            </div>
+                                            <div className="kitchen-aggregate-kpi-hint muted">
+                                                Tổng số phần đăng ký nhiều hơn thực tế (cần nhiều suất hơn mức ăn)
+                                            </div>
+                                        </div>
+                                        <div className="kitchen-aggregate-kpi kitchen-aggregate-kpi--short">
+                                            <div className="kitchen-aggregate-kpi-label">Tổng phần đặt thiếu</div>
+                                            <div className="kitchen-aggregate-kpi-value">
+                                                {aggregateStats.totalShortage}
+                                            </div>
+                                            <div className="kitchen-aggregate-kpi-hint muted">
+                                                Tổng số phần thực tế ăn nhiều hơn đăng ký
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="kitchen-aggregate-table-wrap">
+                                        <table className="kitchen-aggregate-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Phòng ban</th>
+                                                    <th>Đăng ký</th>
+                                                    <th>Thực tế</th>
+                                                    <th>Đặt dư</th>
+                                                    <th>Đặt thiếu</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {aggregateStats.merged.map((row) => {
+                                                    const surplus = Math.max(0, row.variance)
+                                                    const shortage = Math.max(0, -row.variance)
+                                                    return (
+                                                        <tr key={row.departmentId}>
+                                                            <td>{row.departmentId}</td>
+                                                            <td className="table-number">{row.registeredTotal}</td>
+                                                            <td className="table-number">{row.actualTotal}</td>
+                                                            <td className="table-number">{surplus}</td>
+                                                            <td className="table-number">{shortage}</td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="modal-actions">
+                                        <button
+                                            className="btn btn-ghost"
+                                            type="button"
+                                            onClick={() => {
+                                                setAggregatePhase('pick')
+                                                setAggregateSnapshot(null)
+                                            }}
+                                        >
+                                            Chọn tháng khác
+                                        </button>
+                                        <button className="btn btn-primary" type="button" onClick={closeAggregateModal}>
+                                            Đóng
+                                        </button>
+                                    </div>
+                                </>
+                            )
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

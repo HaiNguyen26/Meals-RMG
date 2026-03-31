@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? '/meals-rmg/api';
+const normalizeBase = (value: string) => value.replace(/\/+$/, '');
+
+const API_BASE = normalizeBase(
+  import.meta.env.VITE_API_BASE ??
+    (import.meta.env.DEV ? 'http://localhost:3000' : '/meals-rmg'),
+);
 
 type LoginResponse = {
   accessToken: string;
@@ -15,11 +20,15 @@ type LoginResponse = {
 export type Summary = {
   date: string;
   totalQuantity: number;
+  totalActualQuantity: number;
   departments: {
     departmentId: string;
     regularQuantity: number;
     vegQuantity: number;
     totalQuantity: number;
+    actualQuantity: number;
+    actualUpdatedAt: string | null;
+    actualUpdatedBy: string | null;
     updatedAt: string;
     updatedBy: string | null;
   }[];
@@ -32,8 +41,18 @@ export type DepartmentLunch = {
   regularQuantity: number;
   vegQuantity: number;
   totalQuantity: number;
+  actualQuantity: number;
+  actualUpdatedAt: string | null;
+  actualUpdatedBy: string | null;
   updatedAt: string | null;
   updatedBy: string | null;
+};
+
+export type MonthlyDepartmentSummary = {
+  departmentId: string;
+  registeredTotal: number;
+  actualTotal: number;
+  variance: number;
 };
 
 export class ApiError extends Error {
@@ -154,6 +173,31 @@ export async function setLock(date: string, locked: boolean, token: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ date, locked }),
+    },
+  );
+}
+
+export async function setActualLunch(
+  date: string,
+  departmentId: string,
+  actualQuantity: number,
+  token: string,
+) {
+  return fetchJson<DepartmentLunch>('/lunch/actual', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ date, departmentId, actualQuantity }),
+  });
+}
+
+export async function fetchMonthlySummary(month: string, token: string) {
+  return fetchJson<MonthlyDepartmentSummary[]>(
+    `/lunch/monthly-summary?month=${encodeURIComponent(month)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
     },
   );
 }

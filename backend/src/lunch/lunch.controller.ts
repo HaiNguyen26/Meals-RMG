@@ -14,6 +14,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ClearDepartmentDto } from './dto/clear-department.dto';
 import { DepartmentLunchDto } from './dto/department-lunch.dto';
+import { SetActualDto } from './dto/set-actual.dto';
 import { SetLockDto } from './dto/set-lock.dto';
 import { LunchService } from './lunch.service';
 
@@ -35,6 +36,26 @@ export class LunchController {
     async summaryByDate(@Query('date') date: string) {
         return this.lunchService.summaryByDate(date);
     }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('kitchen', 'admin')
+  @Post('actual')
+  async setActual(@Body() body: SetActualDto, @Req() request: Request) {
+    const actor = this.resolveActor({ request });
+    return this.lunchService.setActualLunch(
+      body.date,
+      body.departmentId,
+      body.actualQuantity,
+      actor.userName,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('kitchen', 'admin')
+  @Get('monthly-summary')
+  async monthlySummary(@Query('month') month: string) {
+    return this.lunchService.monthlySummary(month);
+  }
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('manager', 'admin')

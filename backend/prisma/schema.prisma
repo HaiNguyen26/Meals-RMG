@@ -39,6 +39,9 @@ model DepartmentLunch {
   regularQuantity Int    @default(0)
   vegQuantity   Int      @default(0)
   totalQuantity Int      @default(0)
+  actualQuantity Int     @default(0)
+  actualUpdatedAt DateTime?
+  actualUpdatedBy String?
   updatedBy     String?
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
