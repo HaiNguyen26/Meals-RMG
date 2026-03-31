@@ -1,9 +1,17 @@
 const normalizeBase = (value: string) => value.replace(/\/+$/, '');
 
-const API_BASE = normalizeBase(
-  import.meta.env.VITE_API_BASE ??
-    (import.meta.env.DEV ? 'http://localhost:3000/meals-rmg' : '/meals-rmg'),
-);
+/** Path bases must start with / so fetch() is never resolved relative to /meals-rmg/kitchen. */
+function resolveApiBase(): string {
+  const raw =
+    import.meta.env.VITE_API_BASE ??
+    (import.meta.env.DEV ? 'http://localhost:3000/meals-rmg' : '/meals-rmg');
+  let v = normalizeBase(String(raw).trim());
+  if (!v) v = '/meals-rmg';
+  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  return v.startsWith('/') ? v : `/${v}`;
+}
+
+const API_BASE = resolveApiBase();
 
 type LoginResponse = {
   accessToken: string;
@@ -66,12 +74,36 @@ export class ApiError extends Error {
 }
 
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${input}`, init);
+  const path = input.startsWith('/') ? input : `/${input}`;
+  const url = `${API_BASE}${path}`;
+  const response = await fetch(url, init);
+  const text = await response.text();
+  const ct = response.headers.get('content-type') ?? '';
+  const looksHtml =
+    ct.includes('text/html') || text.trimStart().toLowerCase().startsWith('<!');
+
   if (!response.ok) {
-    const message = await response.text();
-    throw new ApiError(response.status, message || 'Request failed');
+    throw new ApiError(
+      response.status,
+      looksHtml
+        ? `API trả về HTML (${response.url}). Kiểm tra nginx proxy tới Nest và prefix /meals-rmg.`
+        : text || 'Request failed',
+    );
   }
-  return (await response.json()) as T;
+  if (looksHtml) {
+    throw new ApiError(
+      500,
+      `Expected JSON from ${response.url}, got HTML. API_BASE=${API_BASE}`,
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(
+      500,
+      `Invalid JSON from ${response.url}: ${text.slice(0, 120)}…`,
+    );
+  }
 }
 
 export async function login(username: string, password: string) {
