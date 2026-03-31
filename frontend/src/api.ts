@@ -1,8 +1,14 @@
 const normalizeBase = (value: string) => value.replace(/\/+$/, '');
 
-/** Site mount (same as Vite base pathname, without trailing slash). */
+/** Align with vite.config `base` (e.g. /meals-rmg/) so prod cannot drift from a bad VITE_PUBLIC_PREFIX. */
+function publicPathFromVite(): string {
+  const b = normalizeBase(import.meta.env.BASE_URL ?? '');
+  return b || '/meals-rmg';
+}
+
+/** Site mount (same pathname as Vite base, no trailing slash). */
 const PUBLIC_PREFIX = normalizeBase(
-  import.meta.env.VITE_PUBLIC_PREFIX ?? '/meals-rmg',
+  import.meta.env.VITE_PUBLIC_PREFIX ?? publicPathFromVite(),
 );
 
 /** Path bases must start with / so fetch() is never resolved relative to /meals-rmg/kitchen. */
@@ -80,9 +86,20 @@ export class ApiError extends Error {
   }
 }
 
+function buildRequestUrl(path: string): string {
+  const p = path.startsWith('/') ? path : `/${path}`;
+  const relative = `${API_BASE}${p}`;
+  if (relative.startsWith('http://') || relative.startsWith('https://')) {
+    return relative;
+  }
+  if (typeof globalThis.location !== 'undefined' && relative.startsWith('/')) {
+    return new URL(relative, globalThis.location.origin).href;
+  }
+  return relative;
+}
+
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
-  const path = input.startsWith('/') ? input : `/${input}`;
-  const url = `${API_BASE}${path}`;
+  const url = buildRequestUrl(input);
   const response = await fetch(url, init);
   const text = await response.text();
   const ct = response.headers.get('content-type') ?? '';
