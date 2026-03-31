@@ -53,4 +53,5 @@ if [ -n "${MEALS_PM2_APP:-}" ]; then
   pm2 restart "$MEALS_PM2_APP"
 fi
 
-echo "==> Done. Reload nginx if needed; ensure backend .env has MEALS_PUBLIC_PATH=/meals-rmg when behind /meals-rmg/."
+echo "==> Done. Merge scripts/nginx-meals-rmg.snippet.conf if API still returns HTML (JSON parse error). sudo nginx -t && sudo systemctl reload nginx"
+echo "    Backend .env: MEALS_PUBLIC_PATH=/meals-rmg when app is under /meals-rmg/"
