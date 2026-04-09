@@ -2,12 +2,15 @@ import 'dotenv/config';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { resolveNestHttpPrefix } from './config/http-prefix';
 import { RedisIoAdapter } from './realtime/redis.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  // REST under /meals-rmg/api — SPA/static stay under /meals-rmg/ (no overlap with ServeStatic).
-  app.setGlobalPrefix('meals-rmg/api');
+  const httpPrefix = resolveNestHttpPrefix();
+  if (httpPrefix) {
+    app.setGlobalPrefix(httpPrefix);
+  }
   app.enableCors({ origin: true });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),

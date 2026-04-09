@@ -54,4 +54,5 @@ if [ -n "${MEALS_PM2_APP:-}" ]; then
 fi
 
 echo "==> Done. Point nginx → Node for /meals-rmg (see scripts/nginx-meals-rmg.snippet.conf). sudo nginx -t && sudo systemctl reload nginx"
-echo "    Backend .env: MEALS_PUBLIC_PATH=/meals-rmg. Optional FRONTEND_DIST_PATH if frontend/dist is not next to backend in the repo."
+echo "    Backend .env: MEALS_PUBLIC_PATH=/meals-rmg. Nếu 404 /lunch/... trên Nest: NEST_HTTP_PREFIX=bare (nginx đang cắt /meals-rmg/api)."
+echo "    Optional FRONTEND_DIST_PATH if frontend/dist is not next to backend in the repo."
