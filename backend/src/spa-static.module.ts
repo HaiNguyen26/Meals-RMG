@@ -46,6 +46,24 @@ export class SpaStaticModule {
           serveStaticOptions: {
             index: false,
             fallthrough: true,
+            // index.html + SPA fallback: luôn revalidate → deploy mới không cần Ctrl+F5.
+            // assets/* có hash: cache lâu.
+            setHeaders: (res, filepath) => {
+              const normalized = filepath.replace(/\\/g, '/');
+              if (normalized.endsWith('index.html')) {
+                res.setHeader(
+                  'Cache-Control',
+                  'no-cache, no-store, must-revalidate',
+                );
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+              } else if (normalized.includes('/assets/')) {
+                res.setHeader(
+                  'Cache-Control',
+                  'public, max-age=31536000, immutable',
+                );
+              }
+            },
           },
           exclude: serveStaticExcludePaths(),
         }),
