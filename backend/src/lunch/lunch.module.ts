@@ -5,9 +5,8 @@ import { LunchController } from './lunch.controller';
 import { LunchService } from './lunch.service';
 
 @Module({
-    imports: [AuthModule, RealtimeModule],
-    controllers: [LunchController],
-    providers: [LunchService],
+  imports: [AuthModule, RealtimeModule],
+  controllers: [LunchController],
+  providers: [LunchService],
 })
-export class LunchModule { }
-
+export class LunchModule {}

@@ -17,12 +17,7 @@ function serveStaticExcludePaths(): string[] {
     const slash = prefix.startsWith('/') ? prefix : `/${prefix}`;
     return [`${slash}{/*path}`, socketExclude];
   }
-  return [
-    '/lunch{/*path}',
-    '/auth{/*path}',
-    '/health',
-    socketExclude,
-  ];
+  return ['/lunch{/*path}', '/auth{/*path}', '/health', socketExclude];
 }
 
 /** SPA + assets at /meals-rmg/; API theo NEST_HTTP_PREFIX hoặc bare /lunch, /auth. */

@@ -17,7 +17,3 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 }
-
-
-
-

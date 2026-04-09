@@ -7,7 +7,3 @@ export class SetLockDto {
   @IsBoolean()
   locked: boolean;
 }
-
-
-
-

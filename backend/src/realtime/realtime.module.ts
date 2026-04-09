@@ -7,4 +7,3 @@ import { WsRolesGuard } from './ws-roles.guard';
   exports: [RealtimeGateway],
 })
 export class RealtimeModule {}
-

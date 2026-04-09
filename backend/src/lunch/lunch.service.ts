@@ -25,8 +25,13 @@ export class LunchService {
   ) {}
 
   async setDepartmentLunch(input: SetDepartmentInput) {
-    const { departmentId, regularQuantity, vegQuantity, totalQuantity, updatedBy } =
-      input;
+    const {
+      departmentId,
+      regularQuantity,
+      vegQuantity,
+      totalQuantity,
+      updatedBy,
+    } = input;
     if (!departmentId) {
       throw new BadRequestException('Missing department');
     }
@@ -293,14 +298,18 @@ export class LunchService {
       return {
         date,
         locked: timeLocked,
-        lockedAt: timeLocked ? this.getLockCutoff(dateValue).toISOString() : null,
+        lockedAt: timeLocked
+          ? this.getLockCutoff(dateValue).toISOString()
+          : null,
         lockedBy: timeLocked ? 'system' : null,
       };
     }
     return {
       date,
       locked: lock.locked || timeLocked,
-      lockedAt: lock.lockedAt?.toISOString() ?? (timeLocked ? this.getLockCutoff(dateValue).toISOString() : null),
+      lockedAt:
+        lock.lockedAt?.toISOString() ??
+        (timeLocked ? this.getLockCutoff(dateValue).toISOString() : null),
       lockedBy: lock.lockedBy ?? (timeLocked ? 'system' : null),
     };
   }
@@ -405,7 +414,9 @@ export class LunchService {
 
   private normalizeDate(input: Date | string) {
     if (input instanceof Date) {
-      return new Date(Date.UTC(input.getFullYear(), input.getMonth(), input.getDate()));
+      return new Date(
+        Date.UTC(input.getFullYear(), input.getMonth(), input.getDate()),
+      );
     }
     const datePart = input.split('T')[0];
     const [year, month, day] = datePart.split('-').map(Number);
@@ -541,4 +552,3 @@ export class LunchService {
     };
   }
 }
-

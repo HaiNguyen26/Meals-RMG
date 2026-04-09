@@ -22,4 +22,3 @@ export type RequestUser = {
   department: string;
   role: string;
 };
-

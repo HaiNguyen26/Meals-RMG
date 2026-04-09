@@ -39,6 +39,21 @@ type AuthState = {
 
 type AuditRow = DepartmentLunch & { previousQuantity: number | null }
 
+function computeAuditRows(audit: DepartmentLunch[], dateFilter: string): AuditRow[] {
+    const filtered = audit.filter((row) => !dateFilter || row.date === dateFilter)
+    const previousMap: Record<string, number> = {}
+    const computed: AuditRow[] = []
+    filtered
+        .slice()
+        .reverse()
+        .forEach((row) => {
+            const previous = previousMap[row.departmentId] ?? null
+            previousMap[row.departmentId] = row.totalQuantity
+            computed.push({ ...row, previousQuantity: previous })
+        })
+    return computed.reverse()
+}
+
 const STORAGE_KEY = 'meal-auth'
 const APP_BASE = import.meta.env.BASE_URL
 const getTargetDate = (now: Date) => {
@@ -290,7 +305,7 @@ function App() {
                 )
                 if (!summaryResponse) return
                 setSummary(summaryResponse)
-                if (role === 'admin') {
+                if (role === 'admin' || role === 'kitchen') {
                     const auditRows = await withAccessToken((token) =>
                         fetchAuditHistory(token),
                     )
@@ -605,6 +620,7 @@ function App() {
                                 isLocked={isLocked}
                                 auth={auth!}
                                 summary={summary}
+                                audit={audit}
                                 totalQuantity={totalQuantity}
                                 totalRegular={totalRegular}
                                 totalVeg={totalVeg}
@@ -1156,20 +1172,10 @@ function AdminPage({
     const [auditDate, setAuditDate] = useState('')
     const [exporting, setExporting] = useState(false)
 
-    const auditRows = useMemo(() => {
-        const filtered = audit.filter((row) => !auditDate || row.date === auditDate)
-        const previousMap: Record<string, number> = {}
-        const computed: AuditRow[] = []
-        filtered
-            .slice()
-            .reverse()
-            .forEach((row) => {
-                const previous = previousMap[row.departmentId] ?? null
-                previousMap[row.departmentId] = row.totalQuantity
-                computed.push({ ...row, previousQuantity: previous })
-            })
-        return computed.reverse()
-    }, [audit, auditDate])
+    const auditRows = useMemo(
+        () => computeAuditRows(audit, auditDate),
+        [audit, auditDate],
+    )
 
     return (
         <div className="app-shell">
@@ -1455,6 +1461,7 @@ function KitchenPage({
     isLocked,
     auth,
     summary,
+    audit,
     totalQuantity,
     totalRegular,
     totalVeg,
@@ -1479,6 +1486,7 @@ function KitchenPage({
     isLocked: boolean
     auth: AuthState
     summary: Summary | null
+    audit: DepartmentLunch[]
     totalQuantity: number
     totalRegular: number
     totalVeg: number
@@ -1505,6 +1513,12 @@ function KitchenPage({
         null,
     )
     const [actualDateInput, setActualDateInput] = useState(actualDate)
+    const [historyDateFilter, setHistoryDateFilter] = useState('')
+
+    const kitchenHistoryRows = useMemo(
+        () => computeAuditRows(audit, historyDateFilter),
+        [audit, historyDateFilter],
+    )
 
     const aggregateStats = useMemo(() => {
         if (!aggregateSnapshot) return null
@@ -1670,6 +1684,78 @@ function KitchenPage({
                                             <tr>
                                                 <td colSpan={4} className="muted">
                                                     Chưa có dữ liệu tổng kết tháng
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="section-header" style={{ marginTop: 24 }}>
+                            <div>
+                                <h2>Lịch sử đặt cơm</h2>
+                                <p className="muted">
+                                    Thay đổi đăng ký theo phòng ban — chọn ngày để lọc; &quot;Tất cả ngày&quot; xem tối đa 200
+                                    bản ghi gần nhất
+                                </p>
+                            </div>
+                            <div className="section-actions">
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setHistoryDateFilter('')}
+                                >
+                                    Tất cả ngày
+                                </button>
+                                <label className="kitchen-month-inline muted">
+                                    Lọc ngày
+                                    <input
+                                        className="date-input"
+                                        type="date"
+                                        value={historyDateFilter}
+                                        onChange={(event) => setHistoryDateFilter(event.target.value)}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                        <div className="card glass-card table-card">
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Ngày</th>
+                                            <th>Phòng</th>
+                                            <th>Tổng (cũ → mới)</th>
+                                            <th>Thường / Chay</th>
+                                            <th>Người sửa</th>
+                                            <th>Thời gian</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {kitchenHistoryRows.map((row) => (
+                                            <tr key={row.id}>
+                                                <td>{formatDateKeyVi(row.date)}</td>
+                                                <td>{row.departmentId}</td>
+                                                <td className="table-number">
+                                                    {row.previousQuantity ?? '-'} → {row.totalQuantity}
+                                                </td>
+                                                <td className="table-number muted">
+                                                    {row.regularQuantity} thường • {row.vegQuantity} chay
+                                                </td>
+                                                <td className="muted">{row.updatedBy ?? '-'}</td>
+                                                <td className="muted">
+                                                    {row.updatedAt
+                                                        ? new Date(row.updatedAt).toLocaleString()
+                                                        : '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {kitchenHistoryRows.length === 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="muted">
+                                                    {historyDateFilter
+                                                        ? 'Không có thay đổi đăng ký trong ngày đã chọn'
+                                                        : 'Chưa có dữ liệu lịch sử'}
                                                 </td>
                                             </tr>
                                         )}

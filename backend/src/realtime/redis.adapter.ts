@@ -31,7 +31,3 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 }
-
-
-
-
