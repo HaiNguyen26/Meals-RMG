@@ -9,7 +9,11 @@ const FULL_API_PREFIX = '/meals-rmg/api';
  * - Có global prefix: gắn /meals-rmg/api vào /lunch/..., /auth/..., /api/lunch/...
  * - bare (không prefix): nếu request vẫn là /meals-rmg/api/lunch/... thì cắt về /lunch/...
  */
-export function rewriteBareApiPath(req: Request, res: Response, next: NextFunction) {
+export function rewriteBareApiPath(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   const raw = (req.originalUrl ?? req.url ?? '').split('#')[0];
   const qIndex = raw.indexOf('?');
   const pathOnly = qIndex >= 0 ? raw.slice(0, qIndex) : raw;
@@ -29,6 +33,25 @@ export function rewriteBareApiPath(req: Request, res: Response, next: NextFuncti
     }
     if (pathOnly.startsWith('/api/lunch') || pathOnly.startsWith('/api/auth')) {
       rewrite(`${leading}${pathOnly.slice(4)}${search}`);
+      return next();
+    }
+    // nginx lệch: /meals-rmg/lunch/... thiếu đoạn /api
+    const wrongMealsLunch = '/meals-rmg/lunch';
+    if (
+      pathOnly === wrongMealsLunch ||
+      pathOnly.startsWith(`${wrongMealsLunch}/`)
+    ) {
+      const rest = pathOnly.slice(wrongMealsLunch.length);
+      rewrite(`${leading}/lunch${rest}${search}`);
+      return next();
+    }
+    const wrongMealsAuth = '/meals-rmg/auth';
+    if (
+      pathOnly === wrongMealsAuth ||
+      pathOnly.startsWith(`${wrongMealsAuth}/`)
+    ) {
+      const rest = pathOnly.slice(wrongMealsAuth.length);
+      rewrite(`${leading}/auth${rest}${search}`);
       return next();
     }
     const isLegacyApiPath =

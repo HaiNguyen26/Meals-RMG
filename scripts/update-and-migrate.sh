@@ -37,6 +37,15 @@ npx prisma generate
 echo "==> Backend: build (Nest)"
 npm run build
 
+if ! grep -q "monthly-summary" "$ROOT_DIR/backend/dist/src/lunch/lunch.controller.js" 2>/dev/null; then
+  echo "ERROR: dist thiếu route monthly-summary — kiểm tra git pull và npm run build trong backend."
+  exit 1
+fi
+if ! grep -q "rewriteBareApiPath" "$ROOT_DIR/backend/dist/src/main.js" 2>/dev/null; then
+  echo "ERROR: dist/main.js thiếu rewrite middleware — cần bản backend có ExpressAdapter + rewrite."
+  exit 1
+fi
+
 echo "==> Frontend: install dependencies"
 cd "$ROOT_DIR/frontend"
 if [ -f package-lock.json ]; then

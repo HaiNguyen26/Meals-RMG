@@ -8,7 +8,9 @@ export function resolveNestHttpPrefix(): string | undefined {
   if (v === undefined || v === null) {
     return 'meals-rmg/api';
   }
-  const t = String(v).trim();
+  const t = String(v)
+    .trim()
+    .replace(/^\uFEFF/, '');
   if (t === '' || t.toLowerCase() === 'bare') {
     return undefined;
   }
