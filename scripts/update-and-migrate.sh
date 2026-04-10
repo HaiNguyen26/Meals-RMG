@@ -65,3 +65,4 @@ fi
 echo "==> Done. Point nginx → Node for /meals-rmg (see scripts/nginx-meals-rmg.snippet.conf). sudo nginx -t && sudo systemctl reload nginx"
 echo "    Backend .env: MEALS_PUBLIC_PATH=/meals-rmg. Nếu 404 /lunch/... trên Nest: NEST_HTTP_PREFIX=bare (nginx đang cắt /meals-rmg/api)."
 echo "    Optional FRONTEND_DIST_PATH if frontend/dist is not next to backend in the repo."
+echo "    SPA: Nest spa-static + nginx proxy_pass_header Cache-Control → index.html no-cache, assets/*.js hash immutable — user mở lại trang/đăng nhập (tải HTML mới) là có bundle mới, không cần Ctrl+F5."
