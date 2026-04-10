@@ -1596,6 +1596,31 @@ function KitchenPage({
     )
     const [actualDateInput, setActualDateInput] = useState(actualDate)
     const [historyDateFilter, setHistoryDateFilter] = useState('')
+    const [pickedDeptFilter, setPickedDeptFilter] = useState('')
+
+    const pickedDayDeptView = useMemo(() => {
+        if (!pickedSummary) return null
+        if (!pickedDeptFilter) {
+            return {
+                registered: pickedSummary.totalQuantity,
+                actual: pickedSummary.totalActualQuantity,
+                variance:
+                    pickedSummary.totalQuantity - pickedSummary.totalActualQuantity,
+                tableDepts: DEPARTMENTS,
+            }
+        }
+        const row = pickedSummary.departments.find(
+            (r) => r.departmentId === pickedDeptFilter,
+        )
+        const registered = row?.totalQuantity ?? 0
+        const actual = row?.actualQuantity ?? 0
+        return {
+            registered,
+            actual,
+            variance: registered - actual,
+            tableDepts: [pickedDeptFilter],
+        }
+    }, [pickedSummary, pickedDeptFilter])
 
     const kitchenHistoryRows = useMemo(
         () => computeAuditRows(registrationHistory, historyDateFilter),
@@ -1777,10 +1802,10 @@ function KitchenPage({
                             <div>
                                 <h2>Tổng hợp theo ngày</h2>
                                 <p className="muted">
-                                    Chọn ngày ăn để xem tổng đăng ký / thực tế và chi tiết từng phòng
+                                    Chọn ngày và phòng ban (hoặc tất cả phòng) để xem đăng ký / thực tế
                                 </p>
                             </div>
-                            <div className="section-actions">
+                            <div className="section-actions kitchen-day-filters">
                                 <label className="kitchen-month-inline muted">
                                     Ngày
                                     <input
@@ -1792,6 +1817,23 @@ function KitchenPage({
                                         }
                                     />
                                 </label>
+                                <label className="kitchen-month-inline muted">
+                                    Phòng ban
+                                    <select
+                                        className="date-input kitchen-dept-select"
+                                        value={pickedDeptFilter}
+                                        onChange={(event) =>
+                                            setPickedDeptFilter(event.target.value)
+                                        }
+                                    >
+                                        <option value="">Tất cả phòng ban</option>
+                                        {DEPARTMENTS.map((dept) => (
+                                            <option key={dept} value={dept}>
+                                                {dept}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
                             </div>
                         </div>
                         <div className="card glass-card" style={{ marginTop: 8, padding: '16px 20px' }}>
@@ -1800,8 +1842,14 @@ function KitchenPage({
                                     Đang tải…
                                 </p>
                             )}
-                            {!pickSummaryLoading && pickedSummary && (
+                            {!pickSummaryLoading && pickedSummary && pickedDayDeptView && (
                                 <>
+                                    {pickedDeptFilter ? (
+                                        <p className="muted" style={{ margin: '0 0 12px' }}>
+                                            Đang xem riêng phòng:{' '}
+                                            <strong>{pickedDeptFilter}</strong>
+                                        </p>
+                                    ) : null}
                                     <div
                                         style={{
                                             display: 'flex',
@@ -1812,18 +1860,18 @@ function KitchenPage({
                                     >
                                         <div>
                                             <div className="muted" style={{ fontSize: 12 }}>
-                                                Tổng đăng ký
+                                                {pickedDeptFilter ? 'Đăng ký' : 'Tổng đăng ký'}
                                             </div>
                                             <div className="table-number" style={{ fontSize: 22 }}>
-                                                {pickedSummary.totalQuantity}
+                                                {pickedDayDeptView.registered}
                                             </div>
                                         </div>
                                         <div>
                                             <div className="muted" style={{ fontSize: 12 }}>
-                                                Tổng thực tế
+                                                {pickedDeptFilter ? 'Thực tế' : 'Tổng thực tế'}
                                             </div>
                                             <div className="table-number" style={{ fontSize: 22 }}>
-                                                {pickedSummary.totalActualQuantity}
+                                                {pickedDayDeptView.actual}
                                             </div>
                                         </div>
                                         <div>
@@ -1831,8 +1879,7 @@ function KitchenPage({
                                                 Chênh (đăng ký − thực tế)
                                             </div>
                                             <div className="table-number" style={{ fontSize: 22 }}>
-                                                {pickedSummary.totalQuantity -
-                                                    pickedSummary.totalActualQuantity}
+                                                {pickedDayDeptView.variance}
                                             </div>
                                         </div>
                                     </div>
@@ -1842,11 +1889,13 @@ function KitchenPage({
                                                 <tr>
                                                     <th>Phòng ban</th>
                                                     <th>Đăng ký</th>
+                                                    <th>Thường</th>
+                                                    <th>Chay</th>
                                                     <th>Thực tế</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {DEPARTMENTS.map((dept) => {
+                                                {pickedDayDeptView.tableDepts.map((dept) => {
                                                     const row = pickedSummary.departments.find(
                                                         (r) => r.departmentId === dept,
                                                     )
@@ -1855,6 +1904,12 @@ function KitchenPage({
                                                             <td>{dept}</td>
                                                             <td className="table-number">
                                                                 {row?.totalQuantity ?? 0}
+                                                            </td>
+                                                            <td className="table-number muted">
+                                                                {row?.regularQuantity ?? 0}
+                                                            </td>
+                                                            <td className="table-number muted">
+                                                                {row?.vegQuantity ?? 0}
                                                             </td>
                                                             <td className="table-number">
                                                                 {row?.actualQuantity ?? 0}

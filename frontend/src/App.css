@@ -1194,6 +1194,19 @@ tbody td {
   line-height: 1.35;
 }
 
+.kitchen-day-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+select.kitchen-dept-select {
+  min-width: 200px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
 .kitchen-aggregate-table-wrap {
   max-height: min(40vh, 320px);
   overflow: auto;
