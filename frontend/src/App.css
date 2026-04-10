@@ -1194,6 +1194,11 @@ tbody td {
   line-height: 1.35;
 }
 
+.kitchen-daily-totals-card .table-wrap {
+  max-height: min(55vh, 420px);
+  overflow: auto;
+}
+
 .kitchen-aggregate-table-wrap {
   max-height: min(40vh, 320px);
   overflow: auto;

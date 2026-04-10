@@ -9,6 +9,7 @@ import {
     getSocketIoPath,
     getSocketIoUrl,
     clearDepartmentLunch,
+    fetchDailyTotalsByMonth,
     fetchMonthlySummary,
     fetchActualHistory,
     fetchAuditHistory,
@@ -22,6 +23,7 @@ import {
     setDepartmentLunch,
     setLock,
     type ActualHistoryRow,
+    type DailyTotalRow,
     type DepartmentLunch,
     type MonthlyDepartmentSummary,
     type Summary,
@@ -182,6 +184,7 @@ function App() {
     const [kitchenActualDate, setKitchenActualDate] = useState(() => toLocalDateKey(new Date()))
     const [kitchenActualDaySummary, setKitchenActualDaySummary] = useState<Summary | null>(null)
     const [kitchenMonthlyRows, setKitchenMonthlyRows] = useState<MonthlyDepartmentSummary[]>([])
+    const [kitchenDailyTotals, setKitchenDailyTotals] = useState<DailyTotalRow[]>([])
     const [kitchenMonth, setKitchenMonth] = useState(() => toMonthKey(new Date()))
     const [kitchenRegistrationHistory, setKitchenRegistrationHistory] = useState<
         DepartmentLunch[]
@@ -207,6 +210,7 @@ function App() {
         setAudit([])
         setKitchenActualDraft({})
         setKitchenMonthlyRows([])
+        setKitchenDailyTotals([])
         setKitchenRegistrationHistory([])
         setKitchenActualLog([])
     }, [])
@@ -511,10 +515,14 @@ function App() {
             if (!auth || role !== 'kitchen') return null
             setLoading(true)
             try {
-                const rows = await withAccessToken((token) => fetchMonthlySummary(month, token))
+                const [rows, dailyRows] = await Promise.all([
+                    withAccessToken((token) => fetchMonthlySummary(month, token)),
+                    withAccessToken((token) => fetchDailyTotalsByMonth(month, token)),
+                ])
                 if (!rows) return null
                 setKitchenMonth(month)
                 setKitchenMonthlyRows(rows)
+                setKitchenDailyTotals(dailyRows ?? [])
                 return rows
             } finally {
                 setLoading(false)
@@ -671,6 +679,7 @@ function App() {
                                 onResetActualDraft={resetKitchenDraftFromSummary}
                                 loadKitchenActualByDate={handleLoadKitchenActualByDate}
                                 monthlyRows={kitchenMonthlyRows}
+                                dailyTotalsRows={kitchenDailyTotals}
                                 monthValue={kitchenMonth}
                                 loadKitchenMonthly={handleLoadKitchenMonthly}
                                 loading={loading}
@@ -1513,6 +1522,7 @@ function KitchenPage({
     onResetActualDraft,
     loadKitchenActualByDate,
     monthlyRows,
+    dailyTotalsRows,
     monthValue,
     loadKitchenMonthly,
     loading,
@@ -1539,6 +1549,7 @@ function KitchenPage({
     onResetActualDraft: () => void
     loadKitchenActualByDate: (date: string) => Promise<Summary | null>
     monthlyRows: MonthlyDepartmentSummary[]
+    dailyTotalsRows: DailyTotalRow[]
     monthValue: string
     loadKitchenMonthly: (month: string) => Promise<MonthlyDepartmentSummary[] | null>
     loading: boolean
@@ -1725,6 +1736,56 @@ function KitchenPage({
                                             <tr>
                                                 <td colSpan={4} className="muted">
                                                     Chưa có dữ liệu tổng kết tháng
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="section-header" style={{ marginTop: 24 }}>
+                            <div>
+                                <h2>Tổng hợp theo ngày</h2>
+                                <p className="muted">
+                                    Tháng {formatMonthVi(monthValue)} — tổng suất đăng ký và ăn thực tế mỗi ngày (cộng
+                                    tất cả phòng ban)
+                                </p>
+                            </div>
+                        </div>
+                        <div
+                            className="card glass-card table-card kitchen-daily-totals-card"
+                            style={{ marginTop: 8 }}
+                        >
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Ngày</th>
+                                            <th>Tổng đăng ký</th>
+                                            <th>Tổng thực tế</th>
+                                            <th>Chênh (đăng ký − thực tế)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dailyTotalsRows.map((row) => {
+                                            const empty =
+                                                row.registeredTotal === 0 && row.actualTotal === 0
+                                            return (
+                                                <tr
+                                                    key={row.date}
+                                                    className={empty ? 'muted' : undefined}
+                                                >
+                                                    <td>{formatDateKeyVi(row.date)}</td>
+                                                    <td className="table-number">{row.registeredTotal}</td>
+                                                    <td className="table-number">{row.actualTotal}</td>
+                                                    <td className="table-number">{row.variance}</td>
+                                                </tr>
+                                            )
+                                        })}
+                                        {dailyTotalsRows.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="muted">
+                                                    Chưa có dữ liệu theo ngày
                                                 </td>
                                             </tr>
                                         )}

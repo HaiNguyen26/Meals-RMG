@@ -76,6 +76,13 @@ export type MonthlyDepartmentSummary = {
   variance: number;
 };
 
+export type DailyTotalRow = {
+  date: string;
+  registeredTotal: number;
+  actualTotal: number;
+  variance: number;
+};
+
 export type ActualHistoryRow = {
   id: string;
   departmentId: string;
@@ -279,6 +286,15 @@ export async function setActualLunch(
 export async function fetchMonthlySummary(month: string, token: string) {
   return fetchJson<MonthlyDepartmentSummary[]>(
     `/lunch/monthly-summary?month=${encodeURIComponent(month)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+}
+
+export async function fetchDailyTotalsByMonth(month: string, token: string) {
+  return fetchJson<DailyTotalRow[]>(
+    `/lunch/daily-totals?month=${encodeURIComponent(month)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },

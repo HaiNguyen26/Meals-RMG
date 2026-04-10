@@ -65,6 +65,13 @@ export class LunchController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('kitchen', 'admin')
+  @Get('daily-totals')
+  async dailyTotalsByMonth(@Query('month') month: string) {
+    return this.lunchService.dailyTotalsByMonth(month);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('manager', 'admin')
   @Post('department')
   async setDepartmentLunch(
