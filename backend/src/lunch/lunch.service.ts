@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -18,6 +20,7 @@ type SetDepartmentInput = {
 @Injectable()
 export class LunchService {
   private static readonly LOCK_TIMEZONE = 'Asia/Ho_Chi_Minh';
+  private readonly logger = new Logger(LunchService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -169,15 +172,31 @@ export class LunchService {
         1,
       ),
     );
-    const rows = await this.prisma.departmentLunchActualHistory.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lt: endDate,
+    let rows: Awaited<
+      ReturnType<typeof this.prisma.departmentLunchActualHistory.findMany>
+    >;
+    try {
+      rows = await this.prisma.departmentLunchActualHistory.findMany({
+        where: {
+          date: {
+            gte: startDate,
+            lt: endDate,
+          },
         },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+        orderBy: { createdAt: 'asc' },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2021'
+      ) {
+        this.logger.warn(
+          'DepartmentLunchActualHistory: bảng chưa có — chạy npx prisma migrate deploy (hoặc migrate dev). Trả về [].',
+        );
+        return [];
+      }
+      throw e;
+    }
     const previousByKey = new Map<string, number>();
     const mapped: {
       id: string;
