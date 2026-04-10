@@ -10,6 +10,7 @@ import {
     getSocketIoUrl,
     clearDepartmentLunch,
     fetchMonthlySummary,
+    fetchActualHistory,
     fetchAuditHistory,
     fetchDepartmentHistory,
     fetchDepartmentLunch,
@@ -20,6 +21,7 @@ import {
     setActualLunch,
     setDepartmentLunch,
     setLock,
+    type ActualHistoryRow,
     type DepartmentLunch,
     type MonthlyDepartmentSummary,
     type Summary,
@@ -181,6 +183,10 @@ function App() {
     const [kitchenActualDaySummary, setKitchenActualDaySummary] = useState<Summary | null>(null)
     const [kitchenMonthlyRows, setKitchenMonthlyRows] = useState<MonthlyDepartmentSummary[]>([])
     const [kitchenMonth, setKitchenMonth] = useState(() => toMonthKey(new Date()))
+    const [kitchenRegistrationHistory, setKitchenRegistrationHistory] = useState<
+        DepartmentLunch[]
+    >([])
+    const [kitchenActualLog, setKitchenActualLog] = useState<ActualHistoryRow[]>([])
     const [updatedDepartmentId, setUpdatedDepartmentId] = useState<string | null>(
         null,
     )
@@ -201,6 +207,8 @@ function App() {
         setAudit([])
         setKitchenActualDraft({})
         setKitchenMonthlyRows([])
+        setKitchenRegistrationHistory([])
+        setKitchenActualLog([])
     }, [])
 
     const withAccessToken = useCallback(
@@ -305,7 +313,7 @@ function App() {
                 )
                 if (!summaryResponse) return
                 setSummary(summaryResponse)
-                if (role === 'admin' || role === 'kitchen') {
+                if (role === 'admin') {
                     const auditRows = await withAccessToken((token) =>
                         fetchAuditHistory(token),
                     )
@@ -489,6 +497,10 @@ function App() {
             window.setTimeout(() => setShowToast(false), 1800)
             await handleLoadKitchenActualByDate(kitchenActualDate)
             await refreshData()
+            const logRows = await withAccessToken((t) =>
+                fetchActualHistory(kitchenMonth, t),
+            )
+            if (logRows) setKitchenActualLog(logRows)
         } finally {
             setLoading(false)
         }
@@ -515,6 +527,32 @@ function App() {
         if (!auth || role !== 'kitchen') return
         handleLoadKitchenMonthly(kitchenMonth)
     }, [auth, role, kitchenMonth, handleLoadKitchenMonthly])
+
+    useEffect(() => {
+        if (!auth || role !== 'kitchen') return
+        let cancelled = false
+        void (async () => {
+            const rows = await withAccessToken((t) =>
+                fetchAuditHistory(t, { month: kitchenMonth }),
+            )
+            if (!cancelled && rows) setKitchenRegistrationHistory(rows)
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [auth, role, kitchenMonth, withAccessToken])
+
+    useEffect(() => {
+        if (!auth || role !== 'kitchen') return
+        let cancelled = false
+        void (async () => {
+            const rows = await withAccessToken((t) => fetchActualHistory(kitchenMonth, t))
+            if (!cancelled && rows) setKitchenActualLog(rows)
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [auth, role, kitchenMonth, withAccessToken])
 
     const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
@@ -620,7 +658,8 @@ function App() {
                                 isLocked={isLocked}
                                 auth={auth!}
                                 summary={summary}
-                                audit={audit}
+                                registrationHistory={kitchenRegistrationHistory}
+                                actualLogRows={kitchenActualLog}
                                 totalQuantity={totalQuantity}
                                 totalRegular={totalRegular}
                                 totalVeg={totalVeg}
@@ -1461,7 +1500,8 @@ function KitchenPage({
     isLocked,
     auth,
     summary,
-    audit,
+    registrationHistory,
+    actualLogRows,
     totalQuantity,
     totalRegular,
     totalVeg,
@@ -1486,7 +1526,8 @@ function KitchenPage({
     isLocked: boolean
     auth: AuthState
     summary: Summary | null
-    audit: DepartmentLunch[]
+    registrationHistory: DepartmentLunch[]
+    actualLogRows: ActualHistoryRow[]
     totalQuantity: number
     totalRegular: number
     totalVeg: number
@@ -1516,8 +1557,8 @@ function KitchenPage({
     const [historyDateFilter, setHistoryDateFilter] = useState('')
 
     const kitchenHistoryRows = useMemo(
-        () => computeAuditRows(audit, historyDateFilter),
-        [audit, historyDateFilter],
+        () => computeAuditRows(registrationHistory, historyDateFilter),
+        [registrationHistory, historyDateFilter],
     )
 
     const aggregateStats = useMemo(() => {
@@ -1649,7 +1690,7 @@ function KitchenPage({
                                 Tổng hợp dữ liệu
                             </button>
                             <label className="kitchen-month-inline muted">
-                                Xem nhanh tháng
+                                Tháng (tổng hợp, nhật ký thực tế và lịch sử đăng ký)
                                 <input
                                     className="date-input"
                                     type="month"
@@ -1693,10 +1734,58 @@ function KitchenPage({
                         </div>
                         <div className="section-header" style={{ marginTop: 24 }}>
                             <div>
+                                <h2>Nhật ký cập nhật suất thực tế</h2>
+                                <p className="muted">
+                                    Tháng {formatMonthVi(monthValue)} — mỗi lần lưu &quot;Cập nhật thực tế&quot; ghi lại
+                                    (có thể xem lại sau).
+                                </p>
+                            </div>
+                        </div>
+                        <div className="card glass-card table-card">
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Ngày ăn</th>
+                                            <th>Phòng</th>
+                                            <th>Thực tế (cũ → mới)</th>
+                                            <th>Người cập nhật</th>
+                                            <th>Thời gian</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {actualLogRows.map((row) => (
+                                            <tr key={row.id}>
+                                                <td>{formatDateKeyVi(row.date)}</td>
+                                                <td>{row.departmentId}</td>
+                                                <td className="table-number">
+                                                    {row.previousActual ?? '-'} → {row.actualQuantity}
+                                                </td>
+                                                <td className="muted">{row.updatedBy ?? '-'}</td>
+                                                <td className="muted">
+                                                    {row.updatedAt
+                                                        ? new Date(row.updatedAt).toLocaleString()
+                                                        : '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {actualLogRows.length === 0 && (
+                                            <tr>
+                                                <td colSpan={5} className="muted">
+                                                    Chưa có lần cập nhật thực tế trong tháng này
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="section-header" style={{ marginTop: 24 }}>
+                            <div>
                                 <h2>Lịch sử đặt cơm</h2>
                                 <p className="muted">
-                                    Thay đổi đăng ký theo phòng ban — chọn ngày để lọc; &quot;Tất cả ngày&quot; xem tối đa 200
-                                    bản ghi gần nhất
+                                    Tháng {formatMonthVi(monthValue)} — thay đổi đăng ký theo phòng; lọc thêm theo ngày
+                                    nếu cần
                                 </p>
                             </div>
                             <div className="section-actions">
@@ -1755,7 +1844,7 @@ function KitchenPage({
                                                 <td colSpan={6} className="muted">
                                                     {historyDateFilter
                                                         ? 'Không có thay đổi đăng ký trong ngày đã chọn'
-                                                        : 'Chưa có dữ liệu lịch sử'}
+                                                        : 'Không có thay đổi đăng ký trong tháng này'}
                                                 </td>
                                             </tr>
                                         )}

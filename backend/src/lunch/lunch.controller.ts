@@ -52,6 +52,13 @@ export class LunchController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('kitchen', 'admin')
+  @Get('actual/history')
+  async getActualHistory(@Query('month') month: string) {
+    return this.lunchService.listActualAuditHistory(month);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('kitchen', 'admin')
   @Get('monthly-summary')
   async monthlySummary(@Query('month') month: string) {
     return this.lunchService.monthlySummary(month);
@@ -117,9 +124,17 @@ export class LunchController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'kitchen')
   @Get('department/audit')
-  async getAuditHistory(@Query('limit') limit?: string) {
+  async getAuditHistory(
+    @Query('limit') limit?: string,
+    @Query('month') month?: string,
+    @Query('date') date?: string,
+  ) {
     const parsedLimit = limit ? Number(limit) : 200;
-    return this.lunchService.listAuditHistory(parsedLimit);
+    return this.lunchService.listAuditHistory({
+      limit: parsedLimit,
+      month: month?.trim(),
+      date: date?.trim(),
+    });
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

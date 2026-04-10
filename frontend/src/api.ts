@@ -76,6 +76,16 @@ export type MonthlyDepartmentSummary = {
   variance: number;
 };
 
+export type ActualHistoryRow = {
+  id: string;
+  departmentId: string;
+  date: string;
+  actualQuantity: number;
+  previousActual: number | null;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+
 export class ApiError extends Error {
   status: number;
 
@@ -179,9 +189,26 @@ export async function fetchDepartmentHistory(token: string, limit = 30) {
   );
 }
 
-export async function fetchAuditHistory(token: string, limit = 200) {
-  return fetchJson<DepartmentLunch[]>(
-    `/lunch/department/audit?limit=${limit}`,
+export async function fetchAuditHistory(
+  token: string,
+  opts?: { limit?: number; month?: string; date?: string },
+) {
+  const p = new URLSearchParams();
+  if (opts?.month) {
+    p.set('month', opts.month);
+  } else if (opts?.date) {
+    p.set('date', opts.date);
+  } else {
+    p.set('limit', String(opts?.limit ?? 200));
+  }
+  return fetchJson<DepartmentLunch[]>(`/lunch/department/audit?${p}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function fetchActualHistory(month: string, token: string) {
+  return fetchJson<ActualHistoryRow[]>(
+    `/lunch/actual/history?month=${encodeURIComponent(month)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     },

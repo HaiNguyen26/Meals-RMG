@@ -130,12 +130,82 @@ export class LunchService {
     return rows.map((row) => this.mapDepartmentLunchHistory(row));
   }
 
-  async listAuditHistory(limit = 200) {
+  async listAuditHistory(options: {
+    limit?: number;
+    month?: string;
+    date?: string;
+  }) {
+    let where:
+      | { date: Date }
+      | { date: { gte: Date; lt: Date } }
+      | undefined;
+    if (options.date?.trim()) {
+      where = { date: this.normalizeDate(options.date.trim()) };
+    } else if (options.month?.trim()) {
+      const start = this.parseMonthStart(options.month.trim());
+      const end = new Date(
+        Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1),
+      );
+      where = { date: { gte: start, lt: end } };
+    }
+    const scoped = where !== undefined;
+    const take = scoped
+      ? 20_000
+      : Math.min(Math.max(options.limit ?? 200, 1), 2000);
     const rows = await this.prisma.departmentLunchHistory.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      take: limit,
+      take,
     });
     return rows.map((row) => this.mapDepartmentLunchHistory(row));
+  }
+
+  async listActualAuditHistory(month: string) {
+    const startDate = this.parseMonthStart(month);
+    const endDate = new Date(
+      Date.UTC(
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth() + 1,
+        1,
+      ),
+    );
+    const rows = await this.prisma.departmentLunchActualHistory.findMany({
+      where: {
+        date: {
+          gte: startDate,
+          lt: endDate,
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const previousByKey = new Map<string, number>();
+    const mapped: {
+      id: string;
+      departmentId: string;
+      date: string;
+      actualQuantity: number;
+      previousActual: number | null;
+      updatedAt: string;
+      updatedBy: string | null;
+    }[] = [];
+    for (const row of rows) {
+      const dateKey = row.date.toISOString().slice(0, 10);
+      const key = `${row.departmentId}|${dateKey}`;
+      const previousActual = previousByKey.has(key)
+        ? previousByKey.get(key)!
+        : null;
+      previousByKey.set(key, row.actualQuantity);
+      mapped.push({
+        id: row.id,
+        departmentId: row.departmentId,
+        date: dateKey,
+        actualQuantity: row.actualQuantity,
+        previousActual,
+        updatedAt: row.createdAt.toISOString(),
+        updatedBy: row.updatedBy ?? null,
+      });
+    }
+    return mapped.reverse();
   }
 
   async summaryByDate(date: string) {
@@ -186,6 +256,10 @@ export class LunchService {
     }
     await this.purgePastDataIfNeeded();
     const dateValue = this.normalizeDate(date);
+    const existing = await this.prisma.departmentLunch.findUnique({
+      where: { departmentId_date: { departmentId, date: dateValue } },
+    });
+    const prevActual = existing?.actualQuantity ?? 0;
     const record = await this.prisma.departmentLunch.upsert({
       where: { departmentId_date: { departmentId, date: dateValue } },
       create: {
@@ -204,6 +278,16 @@ export class LunchService {
         actualUpdatedBy: updatedBy ?? null,
       },
     });
+    if (prevActual !== actualQuantity) {
+      await this.prisma.departmentLunchActualHistory.create({
+        data: {
+          departmentId,
+          date: dateValue,
+          actualQuantity,
+          updatedBy: updatedBy ?? null,
+        },
+      });
+    }
     const response = this.mapDepartmentLunch(record);
     this.realtimeGateway.emitLunchUpdated(response.date, {
       type: 'department',
@@ -401,9 +485,7 @@ export class LunchService {
       return;
     }
     const today = this.normalizeDate(this.getDateKey(now));
-    await this.prisma.departmentLunchHistory.deleteMany({
-      where: { date: { lt: today } },
-    });
+    // Giữ DepartmentLunchHistory để tra cứu lịch sử đăng ký theo tháng (kitchen / audit).
     await this.prisma.departmentLunch.deleteMany({
       where: { date: { lt: today } },
     });
