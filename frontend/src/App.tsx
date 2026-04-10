@@ -10,7 +10,6 @@ import {
     getSocketIoUrl,
     clearDepartmentLunch,
     fetchMonthlySummary,
-    fetchActualHistory,
     fetchAuditHistory,
     fetchDepartmentHistory,
     fetchDepartmentLunch,
@@ -21,7 +20,6 @@ import {
     setActualLunch,
     setDepartmentLunch,
     setLock,
-    type ActualHistoryRow,
     type DepartmentLunch,
     type MonthlyDepartmentSummary,
     type Summary,
@@ -189,7 +187,6 @@ function App() {
     const [kitchenRegistrationHistory, setKitchenRegistrationHistory] = useState<
         DepartmentLunch[]
     >([])
-    const [kitchenActualLog, setKitchenActualLog] = useState<ActualHistoryRow[]>([])
     const [updatedDepartmentId, setUpdatedDepartmentId] = useState<string | null>(
         null,
     )
@@ -213,7 +210,6 @@ function App() {
         setKitchenPickDate('')
         setKitchenPickedSummary(null)
         setKitchenRegistrationHistory([])
-        setKitchenActualLog([])
     }, [])
 
     const withAccessToken = useCallback(
@@ -526,10 +522,6 @@ function App() {
             window.setTimeout(() => setShowToast(false), 1800)
             await handleLoadKitchenActualByDate(kitchenActualDate)
             await refreshData()
-            const logRows = await withAccessToken((t) =>
-                fetchActualHistory(kitchenMonth, t),
-            )
-            if (logRows) setKitchenActualLog(logRows)
         } finally {
             setLoading(false)
         }
@@ -565,18 +557,6 @@ function App() {
                 fetchAuditHistory(t, { month: kitchenMonth }),
             )
             if (!cancelled && rows) setKitchenRegistrationHistory(rows)
-        })()
-        return () => {
-            cancelled = true
-        }
-    }, [auth, role, kitchenMonth, withAccessToken])
-
-    useEffect(() => {
-        if (!auth || role !== 'kitchen') return
-        let cancelled = false
-        void (async () => {
-            const rows = await withAccessToken((t) => fetchActualHistory(kitchenMonth, t))
-            if (!cancelled && rows) setKitchenActualLog(rows)
         })()
         return () => {
             cancelled = true
@@ -688,7 +668,6 @@ function App() {
                                 auth={auth!}
                                 summary={summary}
                                 registrationHistory={kitchenRegistrationHistory}
-                                actualLogRows={kitchenActualLog}
                                 totalQuantity={totalQuantity}
                                 totalRegular={totalRegular}
                                 totalVeg={totalVeg}
@@ -1534,7 +1513,6 @@ function KitchenPage({
     auth,
     summary,
     registrationHistory,
-    actualLogRows,
     totalQuantity,
     totalRegular,
     totalVeg,
@@ -1564,7 +1542,6 @@ function KitchenPage({
     auth: AuthState
     summary: Summary | null
     registrationHistory: DepartmentLunch[]
-    actualLogRows: ActualHistoryRow[]
     totalQuantity: number
     totalRegular: number
     totalVeg: number
@@ -1756,7 +1733,7 @@ function KitchenPage({
                                 Tổng hợp dữ liệu
                             </button>
                             <label className="kitchen-month-inline muted">
-                                Tháng (tổng hợp, nhật ký thực tế và lịch sử đăng ký)
+                                Tháng (tổng hợp phòng ban và lịch sử đăng ký)
                                 <input
                                     className="date-input"
                                     type="month"
@@ -1927,54 +1904,6 @@ function KitchenPage({
                                     Không tải được dữ liệu ngày này
                                 </p>
                             )}
-                        </div>
-                        <div className="section-header" style={{ marginTop: 24 }}>
-                            <div>
-                                <h2>Nhật ký cập nhật suất thực tế</h2>
-                                <p className="muted">
-                                    Tháng {formatMonthVi(monthValue)} — mỗi lần lưu &quot;Cập nhật thực tế&quot; ghi lại
-                                    (có thể xem lại sau).
-                                </p>
-                            </div>
-                        </div>
-                        <div className="card glass-card table-card">
-                            <div className="table-wrap">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Ngày ăn</th>
-                                            <th>Phòng</th>
-                                            <th>Thực tế (cũ → mới)</th>
-                                            <th>Người cập nhật</th>
-                                            <th>Thời gian</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {actualLogRows.map((row) => (
-                                            <tr key={row.id}>
-                                                <td>{formatDateKeyVi(row.date)}</td>
-                                                <td>{row.departmentId}</td>
-                                                <td className="table-number">
-                                                    {row.previousActual ?? '-'} → {row.actualQuantity}
-                                                </td>
-                                                <td className="muted">{row.updatedBy ?? '-'}</td>
-                                                <td className="muted">
-                                                    {row.updatedAt
-                                                        ? new Date(row.updatedAt).toLocaleString()
-                                                        : '-'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {actualLogRows.length === 0 && (
-                                            <tr>
-                                                <td colSpan={5} className="muted">
-                                                    Chưa có lần cập nhật thực tế trong tháng này
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                         <div className="section-header" style={{ marginTop: 24 }}>
                             <div>

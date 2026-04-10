@@ -76,16 +76,6 @@ export type MonthlyDepartmentSummary = {
   variance: number;
 };
 
-export type ActualHistoryRow = {
-  id: string;
-  departmentId: string;
-  date: string;
-  actualQuantity: number;
-  previousActual: number | null;
-  updatedAt: string;
-  updatedBy: string | null;
-};
-
 export class ApiError extends Error {
   status: number;
 
@@ -204,15 +194,6 @@ export async function fetchAuditHistory(
   return fetchJson<DepartmentLunch[]>(`/lunch/department/audit?${p}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-}
-
-export async function fetchActualHistory(month: string, token: string) {
-  return fetchJson<ActualHistoryRow[]>(
-    `/lunch/actual/history?month=${encodeURIComponent(month)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
 }
 
 export async function clearDepartmentLunch(

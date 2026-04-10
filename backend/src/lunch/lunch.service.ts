@@ -2,9 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  Logger,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -20,7 +18,6 @@ type SetDepartmentInput = {
 @Injectable()
 export class LunchService {
   private static readonly LOCK_TIMEZONE = 'Asia/Ho_Chi_Minh';
-  private readonly logger = new Logger(LunchService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -163,70 +160,6 @@ export class LunchService {
     return rows.map((row) => this.mapDepartmentLunchHistory(row));
   }
 
-  async listActualAuditHistory(month: string) {
-    const startDate = this.parseMonthStart(month);
-    const endDate = new Date(
-      Date.UTC(
-        startDate.getUTCFullYear(),
-        startDate.getUTCMonth() + 1,
-        1,
-      ),
-    );
-    let rows: Awaited<
-      ReturnType<typeof this.prisma.departmentLunchActualHistory.findMany>
-    >;
-    try {
-      rows = await this.prisma.departmentLunchActualHistory.findMany({
-        where: {
-          date: {
-            gte: startDate,
-            lt: endDate,
-          },
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2021'
-      ) {
-        this.logger.warn(
-          'DepartmentLunchActualHistory: bảng chưa có — chạy npx prisma migrate deploy (hoặc migrate dev). Trả về [].',
-        );
-        return [];
-      }
-      throw e;
-    }
-    const previousByKey = new Map<string, number>();
-    const mapped: {
-      id: string;
-      departmentId: string;
-      date: string;
-      actualQuantity: number;
-      previousActual: number | null;
-      updatedAt: string;
-      updatedBy: string | null;
-    }[] = [];
-    for (const row of rows) {
-      const dateKey = row.date.toISOString().slice(0, 10);
-      const key = `${row.departmentId}|${dateKey}`;
-      const previousActual = previousByKey.has(key)
-        ? previousByKey.get(key)!
-        : null;
-      previousByKey.set(key, row.actualQuantity);
-      mapped.push({
-        id: row.id,
-        departmentId: row.departmentId,
-        date: dateKey,
-        actualQuantity: row.actualQuantity,
-        previousActual,
-        updatedAt: row.createdAt.toISOString(),
-        updatedBy: row.updatedBy ?? null,
-      });
-    }
-    return mapped.reverse();
-  }
-
   async summaryByDate(date: string) {
     await this.purgePastDataIfNeeded();
     const dateValue = this.normalizeDate(date);
@@ -275,10 +208,6 @@ export class LunchService {
     }
     await this.purgePastDataIfNeeded();
     const dateValue = this.normalizeDate(date);
-    const existing = await this.prisma.departmentLunch.findUnique({
-      where: { departmentId_date: { departmentId, date: dateValue } },
-    });
-    const prevActual = existing?.actualQuantity ?? 0;
     const record = await this.prisma.departmentLunch.upsert({
       where: { departmentId_date: { departmentId, date: dateValue } },
       create: {
@@ -297,16 +226,6 @@ export class LunchService {
         actualUpdatedBy: updatedBy ?? null,
       },
     });
-    if (prevActual !== actualQuantity) {
-      await this.prisma.departmentLunchActualHistory.create({
-        data: {
-          departmentId,
-          date: dateValue,
-          actualQuantity,
-          updatedBy: updatedBy ?? null,
-        },
-      });
-    }
     const response = this.mapDepartmentLunch(record);
     this.realtimeGateway.emitLunchUpdated(response.date, {
       type: 'department',

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -49,17 +48,6 @@ export class LunchController {
       body.actualQuantity,
       actor.userName,
     );
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('kitchen', 'admin')
-  @Get('actual/history')
-  async getActualHistory(@Query('month') month?: string) {
-    const m = month?.trim();
-    if (!m) {
-      throw new BadRequestException('Thiếu tham số month (định dạng YYYY-MM)');
-    }
-    return this.lunchService.listActualAuditHistory(m);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

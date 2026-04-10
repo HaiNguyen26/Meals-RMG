@@ -63,18 +63,6 @@ model DepartmentLunchHistory {
   @@index([departmentId, date])
 }
 
-model DepartmentLunchActualHistory {
-  id             String   @id @default(uuid())
-  departmentId   String
-  date           DateTime
-  actualQuantity Int
-  updatedBy      String?
-  createdAt      DateTime @default(now())
-
-  @@index([date])
-  @@index([departmentId, date])
-}
-
 model LunchLock {
   id        String   @id @default(uuid())
   date      DateTime @unique
