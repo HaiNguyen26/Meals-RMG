@@ -336,49 +336,6 @@ export class LunchService {
     );
   }
 
-  /** Tổng đăng ký / thực tế gộp theo từng ngày trong tháng (kitchen xem nhanh theo ngày). */
-  async dailyTotalsByMonth(month: string) {
-    const startDate = this.parseMonthStart(month);
-    const y = startDate.getUTCFullYear();
-    const m = startDate.getUTCMonth();
-    const endDate = new Date(Date.UTC(y, m + 1, 1));
-    const rows = await this.prisma.departmentLunch.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lt: endDate,
-        },
-      },
-    });
-    const byDay = new Map<string, { registered: number; actual: number }>();
-    for (const row of rows) {
-      const key = row.date.toISOString().slice(0, 10);
-      const quantities = this.normalizeQuantities(row);
-      const cur = byDay.get(key) ?? { registered: 0, actual: 0 };
-      cur.registered += quantities.totalQuantity;
-      cur.actual += row.actualQuantity ?? 0;
-      byDay.set(key, cur);
-    }
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const out: {
-      date: string;
-      registeredTotal: number;
-      actualTotal: number;
-      variance: number;
-    }[] = [];
-    for (let d = 1; d <= lastDay; d++) {
-      const dateKey = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const v = byDay.get(dateKey) ?? { registered: 0, actual: 0 };
-      out.push({
-        date: dateKey,
-        registeredTotal: v.registered,
-        actualTotal: v.actual,
-        variance: v.registered - v.actual,
-      });
-    }
-    return out;
-  }
-
   async setLock(date: string, locked: boolean, actor: string | null) {
     await this.purgePastDataIfNeeded();
     const dateValue = this.normalizeDate(date);

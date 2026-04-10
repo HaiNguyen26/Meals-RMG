@@ -9,7 +9,6 @@ import {
     getSocketIoPath,
     getSocketIoUrl,
     clearDepartmentLunch,
-    fetchDailyTotalsByMonth,
     fetchMonthlySummary,
     fetchActualHistory,
     fetchAuditHistory,
@@ -23,7 +22,6 @@ import {
     setDepartmentLunch,
     setLock,
     type ActualHistoryRow,
-    type DailyTotalRow,
     type DepartmentLunch,
     type MonthlyDepartmentSummary,
     type Summary,
@@ -184,8 +182,10 @@ function App() {
     const [kitchenActualDate, setKitchenActualDate] = useState(() => toLocalDateKey(new Date()))
     const [kitchenActualDaySummary, setKitchenActualDaySummary] = useState<Summary | null>(null)
     const [kitchenMonthlyRows, setKitchenMonthlyRows] = useState<MonthlyDepartmentSummary[]>([])
-    const [kitchenDailyTotals, setKitchenDailyTotals] = useState<DailyTotalRow[]>([])
     const [kitchenMonth, setKitchenMonth] = useState(() => toMonthKey(new Date()))
+    const [kitchenPickDate, setKitchenPickDate] = useState('')
+    const [kitchenPickedSummary, setKitchenPickedSummary] = useState<Summary | null>(null)
+    const [kitchenPickLoading, setKitchenPickLoading] = useState(false)
     const [kitchenRegistrationHistory, setKitchenRegistrationHistory] = useState<
         DepartmentLunch[]
     >([])
@@ -210,7 +210,8 @@ function App() {
         setAudit([])
         setKitchenActualDraft({})
         setKitchenMonthlyRows([])
-        setKitchenDailyTotals([])
+        setKitchenPickDate('')
+        setKitchenPickedSummary(null)
         setKitchenRegistrationHistory([])
         setKitchenActualLog([])
     }, [])
@@ -254,6 +255,11 @@ function App() {
     const isLocked = lockState?.locked ?? false
     const role = auth?.user.role ?? null
 
+    useEffect(() => {
+        if (role !== 'kitchen') return
+        if (!kitchenPickDate) setKitchenPickDate(date)
+    }, [role, date, kitchenPickDate])
+
     const canViewSummary = role === 'admin' || role === 'kitchen'
     const canEditDepartment = role === 'manager'
     const canLock = role === 'admin'
@@ -292,6 +298,25 @@ function App() {
         if (role !== 'kitchen') return
         setKitchenActualDate(date)
     }, [role, date])
+
+    useEffect(() => {
+        if (!auth || role !== 'kitchen' || !kitchenPickDate) return
+        let cancelled = false
+        setKitchenPickLoading(true)
+        void (async () => {
+            try {
+                const s = await withAccessToken((t) => fetchSummary(kitchenPickDate, t))
+                if (!cancelled) setKitchenPickedSummary(s ?? null)
+            } catch {
+                if (!cancelled) setKitchenPickedSummary(null)
+            } finally {
+                if (!cancelled) setKitchenPickLoading(false)
+            }
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [auth, role, kitchenPickDate, withAccessToken])
 
     const resetKitchenDraftFromSummary = useCallback(() => {
         const source = kitchenActualDaySummary ?? summary
@@ -515,14 +540,10 @@ function App() {
             if (!auth || role !== 'kitchen') return null
             setLoading(true)
             try {
-                const [rows, dailyRows] = await Promise.all([
-                    withAccessToken((token) => fetchMonthlySummary(month, token)),
-                    withAccessToken((token) => fetchDailyTotalsByMonth(month, token)),
-                ])
+                const rows = await withAccessToken((token) => fetchMonthlySummary(month, token))
                 if (!rows) return null
                 setKitchenMonth(month)
                 setKitchenMonthlyRows(rows)
-                setKitchenDailyTotals(dailyRows ?? [])
                 return rows
             } finally {
                 setLoading(false)
@@ -679,7 +700,10 @@ function App() {
                                 onResetActualDraft={resetKitchenDraftFromSummary}
                                 loadKitchenActualByDate={handleLoadKitchenActualByDate}
                                 monthlyRows={kitchenMonthlyRows}
-                                dailyTotalsRows={kitchenDailyTotals}
+                                pickedSummary={kitchenPickedSummary}
+                                pickedSummaryDate={kitchenPickDate}
+                                onPickedSummaryDateChange={setKitchenPickDate}
+                                pickSummaryLoading={kitchenPickLoading}
                                 monthValue={kitchenMonth}
                                 loadKitchenMonthly={handleLoadKitchenMonthly}
                                 loading={loading}
@@ -1522,7 +1546,10 @@ function KitchenPage({
     onResetActualDraft,
     loadKitchenActualByDate,
     monthlyRows,
-    dailyTotalsRows,
+    pickedSummary,
+    pickedSummaryDate,
+    onPickedSummaryDateChange,
+    pickSummaryLoading,
     monthValue,
     loadKitchenMonthly,
     loading,
@@ -1549,7 +1576,10 @@ function KitchenPage({
     onResetActualDraft: () => void
     loadKitchenActualByDate: (date: string) => Promise<Summary | null>
     monthlyRows: MonthlyDepartmentSummary[]
-    dailyTotalsRows: DailyTotalRow[]
+    pickedSummary: Summary | null
+    pickedSummaryDate: string
+    onPickedSummaryDateChange: (date: string) => void
+    pickSummaryLoading: boolean
     monthValue: string
     loadKitchenMonthly: (month: string) => Promise<MonthlyDepartmentSummary[] | null>
     loading: boolean
@@ -1747,51 +1777,101 @@ function KitchenPage({
                             <div>
                                 <h2>Tổng hợp theo ngày</h2>
                                 <p className="muted">
-                                    Tháng {formatMonthVi(monthValue)} — tổng suất đăng ký và ăn thực tế mỗi ngày (cộng
-                                    tất cả phòng ban)
+                                    Chọn ngày ăn để xem tổng đăng ký / thực tế và chi tiết từng phòng
                                 </p>
                             </div>
-                        </div>
-                        <div
-                            className="card glass-card table-card kitchen-daily-totals-card"
-                            style={{ marginTop: 8 }}
-                        >
-                            <div className="table-wrap">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Ngày</th>
-                                            <th>Tổng đăng ký</th>
-                                            <th>Tổng thực tế</th>
-                                            <th>Chênh (đăng ký − thực tế)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {dailyTotalsRows.map((row) => {
-                                            const empty =
-                                                row.registeredTotal === 0 && row.actualTotal === 0
-                                            return (
-                                                <tr
-                                                    key={row.date}
-                                                    className={empty ? 'muted' : undefined}
-                                                >
-                                                    <td>{formatDateKeyVi(row.date)}</td>
-                                                    <td className="table-number">{row.registeredTotal}</td>
-                                                    <td className="table-number">{row.actualTotal}</td>
-                                                    <td className="table-number">{row.variance}</td>
-                                                </tr>
-                                            )
-                                        })}
-                                        {dailyTotalsRows.length === 0 && (
-                                            <tr>
-                                                <td colSpan={4} className="muted">
-                                                    Chưa có dữ liệu theo ngày
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
+                            <div className="section-actions">
+                                <label className="kitchen-month-inline muted">
+                                    Ngày
+                                    <input
+                                        className="date-input"
+                                        type="date"
+                                        value={pickedSummaryDate}
+                                        onChange={(event) =>
+                                            onPickedSummaryDateChange(event.target.value)
+                                        }
+                                    />
+                                </label>
                             </div>
+                        </div>
+                        <div className="card glass-card" style={{ marginTop: 8, padding: '16px 20px' }}>
+                            {pickSummaryLoading && (
+                                <p className="muted" style={{ margin: 0 }}>
+                                    Đang tải…
+                                </p>
+                            )}
+                            {!pickSummaryLoading && pickedSummary && (
+                                <>
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            gap: '16px 24px',
+                                            marginBottom: 16,
+                                        }}
+                                    >
+                                        <div>
+                                            <div className="muted" style={{ fontSize: 12 }}>
+                                                Tổng đăng ký
+                                            </div>
+                                            <div className="table-number" style={{ fontSize: 22 }}>
+                                                {pickedSummary.totalQuantity}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="muted" style={{ fontSize: 12 }}>
+                                                Tổng thực tế
+                                            </div>
+                                            <div className="table-number" style={{ fontSize: 22 }}>
+                                                {pickedSummary.totalActualQuantity}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="muted" style={{ fontSize: 12 }}>
+                                                Chênh (đăng ký − thực tế)
+                                            </div>
+                                            <div className="table-number" style={{ fontSize: 22 }}>
+                                                {pickedSummary.totalQuantity -
+                                                    pickedSummary.totalActualQuantity}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="table-wrap">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Phòng ban</th>
+                                                    <th>Đăng ký</th>
+                                                    <th>Thực tế</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {DEPARTMENTS.map((dept) => {
+                                                    const row = pickedSummary.departments.find(
+                                                        (r) => r.departmentId === dept,
+                                                    )
+                                                    return (
+                                                        <tr key={dept}>
+                                                            <td>{dept}</td>
+                                                            <td className="table-number">
+                                                                {row?.totalQuantity ?? 0}
+                                                            </td>
+                                                            <td className="table-number">
+                                                                {row?.actualQuantity ?? 0}
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+                            {!pickSummaryLoading && !pickedSummary && pickedSummaryDate && (
+                                <p className="muted" style={{ margin: 0 }}>
+                                    Không tải được dữ liệu ngày này
+                                </p>
+                            )}
                         </div>
                         <div className="section-header" style={{ marginTop: 24 }}>
                             <div>
